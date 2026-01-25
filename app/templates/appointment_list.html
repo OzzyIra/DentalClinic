@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% load clinic_tags %}
+
+{% block title %}Записи на прием{% endblock %}
+
+{% block content %}
+<h2>Записи</h2>
+<table class="table">
+    <thead>
+    <tr>
+        <th>Пациент</th>
+        <th>Врач</th>
+        <th>Дата и время</th>
+        <th>Статус</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for appt in appointments %}
+    <tr style="background-color: {{ appt.status|status_color }}">
+        <td>{{ appt.patient.get_full_name }}</td>
+        <td>{{ appt.doctor.get_full_name }}</td>
+        <td>{{ appt.date_time|datetime_format }}</td>
+        <td>{{ appt.status|status_label }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

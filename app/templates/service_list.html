@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% load clinic_tags %}  <!-- Подключаем теги -->
+
+{% block title %}Услуги{% endblock %}
+
+{% block content %}
+<h2>Услуги</h2>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Название</th>
+            <th>Цена</th>
+            <th>Длительность</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for service in services %}
+            <tr>
+                <td>{{ service.name }}</td>
+                <td>{{ service.price|rubles }}</td>  <!-- Используем фильтр -->
+                <td>{{ service.duration }} мин</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,155 @@
+<!-- templates/admin_dashboard.html -->
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+{% load clinic_tags %} <!-- Подключаем пользовательские теги -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Клиника им. Цяо — Главврач</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Подключение внешнего CSS -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+    <span>Программа</span>
+    <span>Клиника им. Цяо</span>
+    <button class="btn btn-light">ЛОГИН</button>
+</div>
+
+<!-- Main Navigation Tabs -->
+<ul class="nav nav-tabs nav-justified">
+    <li class="nav-item"><a class="nav-link" href="#">Рассписание</a></li>
+    <li class="nav-item"><a class="nav-link" href="#">Услуги</a></li>
+    <li class="nav-item"><a class="nav-link" href="#">Персонал</a></li>
+    <li class="nav-item"><a class="nav-link" href="#">Статистика</a></li>
+    <li class="nav-item"><a class="nav-link" href="#">Документы</a></li>
+</ul>
+
+<!-- Sub-navigation Tabs -->
+<ul class="nav nav-tabs nav-justified mt-2">
+    <li class="nav-item"><a class="nav-link" href="#">Календарь</a></li>
+    <li class="nav-item"><a class="nav-link" href="#">Картотека</a></li>
+    <li class="nav-item"><a class="nav-link" href="#">Врачи</a></li>
+</ul>
+
+<!-- Main Content - 4 Columns -->
+<div class="container-fluid mt-3">
+    <div class="row">
+
+        <!-- Записи на сегодня -->
+        <div class="col-md-3 col-section">
+            <div class="section-title">
+                Записи на сегодня
+                <button id="add-btn" class="btn btn-sm btn-success ms-2">+</button>
+            </div>
+            <!-- Пример использования тега -->
+            <small>Всего записей: {% appointments_today_count %}</small>
+            <div class="patient-card" data-contextmenu="edit,delete">
+                1 Орлов А.А. 16:28-17:00 вр Голубева С.Ю
+            </div>
+            <div class="patient-card" data-contextmenu="edit,delete">
+                2 Орлов А.А. 17:05-17:45 вр Голубева С.Ю
+            </div>
+        </div>
+
+        <!-- Ожидают приема -->
+        <div class="col-md-3 col-section">
+            <div class="section-title">Ожидают приема</div>
+            <div class="patient-card" data-contextmenu="call,cancel">
+                1 Чернышов А.А. вр Голубева С.Ю
+            </div>
+            <div class="patient-card" data-contextmenu="call,cancel">
+                2 Сидоров А.А. вр Голубева С.Ю
+            </div>
+        </div>
+
+        <!-- На приеме -->
+        <div class="col-md-3 col-section">
+            <div class="section-title">На приеме</div>
+            <div class="patient-card" data-contextmenu="finish,pause">
+                1 Попов А.А. вр Голубева С.Ю
+            </div>
+            <div class="patient-card" data-contextmenu="finish,pause">
+                2 Иванов А.А. вр Голубева С.Ю
+            </div>
+        </div>
+
+        <!-- Прием завершили -->
+        <div class="col-md-3 col-section">
+            <div class="section-title">Прием завершили</div>
+            <div class="patient-card" data-contextmenu="view,print">
+                1 Смирнов А.А. 16:27 вр Голубева С.Ю
+            </div>
+            <div class="patient-card" data-contextmenu="view,print">
+                2 Соболев А.А. 14:00 вр Голубева С.Ю
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Контекстное меню -->
+<div id="context-menu" class="context-menu" style="display:none;">
+    <ul class="list-group">
+        <li class="list-group-item action-item" data-action="edit">Изменить</li>
+        <li class="list-group-item action-item" data-action="delete">Удалить</li>
+        <li class="list-group-item action-item" data-action="call">Вызвать</li>
+        <li class="list-group-item action-item" data-action="cancel">Отменить</li>
+        <li class="list-group-item action-item" data-action="finish">Завершить прием</li>
+        <li class="list-group-item action-item" data-action="pause">Приостановить</li>
+        <li class="list-group-item action-item" data-action="view">Просмотреть карту</li>
+        <li class="list-group-item action-item" data-action="print">Печать документа</li>
+    </ul>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Встроенный JS -->
+<script>
+    const contextMenu = document.getElementById('context-menu');
+    let currentActionTarget = null;
+
+    document.querySelectorAll('.patient-card').forEach(card => {
+        card.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const allowedActions = card.getAttribute('data-contextmenu').split(',');
+            updateContextMenu(allowedActions);
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = `${e.pageX}px`;
+            contextMenu.style.top = `${e.pageY}px`;
+            currentActionTarget = card;
+        });
+    });
+
+    function updateContextMenu(actions) {
+        document.querySelectorAll('.action-item').forEach(item => {
+            if (actions.includes(item.dataset.action)) {
+                item.style.display = 'list-item';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    document.querySelectorAll('.action-item').forEach(item => {
+        item.addEventListener('click', () => {
+            alert(`Вызвано действие: ${item.dataset.action}`);
+            contextMenu.style.display = 'none';
+        });
+    });
+
+    document.addEventListener('click', () => {
+        contextMenu.style.display = 'none';
+    });
+
+    document.getElementById('add-btn').addEventListener('click', () => {
+        alert('Добавить запись');
+    });
+</script>
+</body>
+</html>
