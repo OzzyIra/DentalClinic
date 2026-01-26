@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django import forms
 from django.db.models import F, Sum
+from django.core.exceptions import ValidationError
 from .models import (
     User,
     Patient,
@@ -13,9 +14,37 @@ from .models import (
 )
 
 
-# ПОЛЬЗОВАТЕЛЬ
-@admin.register(User)
+# Проверка доступа к админке
+def user_has_admin_access(user):
+    return user.is_superuser or (user.is_staff and user.role == 'admin')
+
+
+# Кастомный UserAdmin
 class CustomUserAdmin(BaseUserAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    # Сделаем поля first_name, last_name, phone обязательными при создании
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Сделаем поля обязательными
+        form.base_fields['first_name'].required = True
+        form.base_fields['last_name'].required = True
+        form.base_fields['phone'].required = True
+        return form
+
     list_display = ['username', 'email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active']
     list_filter = ['role', 'is_staff', 'is_active']
     search_fields = ['username', 'first_name', 'last_name', 'email']
@@ -29,9 +58,23 @@ class CustomUserAdmin(BaseUserAdmin):
     )
 
 
-#  ПАЦИЕНТ
-@admin.register(Patient)
+# Кастомный PatientAdmin
 class PatientAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
     list_display = ['last_name', 'first_name', 'middle_name', 'phone', 'birth_date', 'discount', 'created_at']
     list_filter = ['discount', 'created_at']
     search_fields = ['last_name', 'first_name', 'phone', 'email']
@@ -50,14 +93,40 @@ class PatientAdmin(admin.ModelAdmin):
     )
 
 
-#  ВРАЧ
-@admin.register(Doctor)
+# Кастомный DoctorAdmin
 class DoctorAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
     list_display = ['get_full_name', 'specialty', 'room', 'is_active', 'get_phone']
     list_filter = ['specialty', 'is_active']
     search_fields = ['user__last_name', 'user__first_name', 'specialty', 'room']
     list_editable = ['room', 'is_active']
     list_select_related = ('user',)
+
+    def save_model(self, request, obj, form, change):
+        # Проверяем, что у связанного пользователя есть имя, фамилия, телефон
+        if not obj.user.first_name.strip() or not obj.user.last_name.strip() or not obj.user.phone.strip():
+            raise ValidationError({
+                'user': "У пользователя должны быть заполнены имя, фамилия и телефон."
+            })
+        if not obj.specialty.strip():
+            raise ValidationError({
+                'specialty': "У врача должна быть указана специальность."
+            })
+        super().save_model(request, obj, form, change)
 
     @admin.display(description='Врач', ordering='user__last_name')
     def get_full_name(self, obj):
@@ -68,9 +137,23 @@ class DoctorAdmin(admin.ModelAdmin):
         return obj.user.phone if obj.user.phone else "—"
 
 
-# УСЛУГА
-@admin.register(Service)
+# Кастомный ServiceAdmin
 class ServiceAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
     list_display = ['name', 'price', 'duration', 'formatted_price']
     list_editable = ['price', 'duration']
     search_fields = ['name']
@@ -83,10 +166,23 @@ class ServiceAdmin(admin.ModelAdmin):
             return obj.price
 
 
-# ЗАПИСЬ
-
-@admin.register(Appointment)
+# Кастомный AppointmentAdmin
 class AppointmentAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
     list_display = ['patient', 'doctor', 'date_time', 'get_time_slot', 'duration', 'get_status_display',
                     'cancel_reason_type']
     list_filter = ['status', 'doctor', 'date_time']
@@ -115,7 +211,6 @@ class AppointmentAdmin(admin.ModelAdmin):
         }),
     )
 
-    # Кастомная форма с HTML5 виджетом времени
     def get_form(self, request, obj=None, **kwargs):
         class AppointmentForm(forms.ModelForm):
             date_time = forms.DateTimeField(
@@ -154,7 +249,6 @@ class AppointmentAdmin(admin.ModelAdmin):
     def get_status_display(self, obj):
         return obj.get_status_display()
 
-    # Кастомные действия
     @admin.action(description='Отметить как завершенные')
     def mark_as_completed(self, request, queryset):
         updated = queryset.update(status='completed')
@@ -177,18 +271,41 @@ class AppointmentAdmin(admin.ModelAdmin):
         self.message_user(request, f"{updated} пациентов не пришли на прием")
 
 
-# СЧЕТ (INLINE для услуг)
+# Кастомный InvoiceServiceInline
 class InvoiceServiceInline(admin.TabularInline):
     model = InvoiceService
     extra = 1
     fields = ['service', 'quantity', 'price_at_time']
-    readonly_fields = []  # можно добавить 'price_at_time' если автозаполнение настроено
+    readonly_fields = []
     autocomplete_fields = ['service']
 
+    def has_add_permission(self, request, obj=None):
+        return user_has_admin_access(request.user)
 
-# СЧЕТ
-@admin.register(Invoice)
+    def has_change_permission(self, request, obj=None):
+        return user_has_admin_access(request.user)
+
+    def has_delete_permission(self, request, obj=None):
+        return user_has_admin_access(request.user)
+
+
+# Кастомный InvoiceAdmin
 class InvoiceAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
     list_display = ['id', 'appointment', 'total_amount', 'discount_applied', 'final_amount', 'is_paid', 'created_at']
     list_filter = ['is_paid', 'created_at']
     search_fields = ['appointment__patient__last_name', 'appointment__doctor__user__last_name']
@@ -216,23 +333,19 @@ class InvoiceAdmin(admin.ModelAdmin):
         """
         instances = formset.save(commit=False)
         for inst in instances:
-            # Если price_at_time не заполнено, заполняем текущей ценой услуги
             if not inst.price_at_time and inst.service:
                 inst.price_at_time = inst.service.price
             inst.save()
-        # удалить удалённые
         for obj in formset.deleted_objects:
             obj.delete()
         formset.save_m2m()
 
-        # После сохранения инлайнов пересчитываем total и final
         invoice = form.instance
         totals = InvoiceService.objects.filter(invoice=invoice).aggregate(
             total=Sum(F('price_at_time') * F('quantity'))
         )
         total_amount = totals.get('total') or 0
         invoice.total_amount = total_amount
-        # final_amount пересчитывается в модели Invoice.save()
         invoice.save()
 
 
@@ -240,3 +353,11 @@ class InvoiceAdmin(admin.ModelAdmin):
 admin.site.site_header = "🦷 Стоматологическая клиника - Панель управления"
 admin.site.site_title = "Стоматология"
 admin.site.index_title = "Администрирование"
+
+# Регистрация моделей
+admin.site.register(User, CustomUserAdmin)
+admin.site.register(Patient, PatientAdmin)
+admin.site.register(Doctor, DoctorAdmin)
+admin.site.register(Service, ServiceAdmin)
+admin.site.register(Appointment, AppointmentAdmin)
+admin.site.register(Invoice, InvoiceAdmin)
