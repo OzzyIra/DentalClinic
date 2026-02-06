@@ -104,8 +104,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'ru-ru'  # ✅ Перевёл на русский
-TIME_ZONE = 'Europe/Moscow'  # ✅ Московское время
+LANGUAGE_CODE = 'ru-ru'
+TIME_ZONE = 'Europe/Moscow'
 USE_I18N = True
 USE_TZ = True
 
@@ -117,7 +117,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # когда будут добавляться фото пациентов/врачей
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Для входа/выхода
 LOGIN_URL = 'login/'

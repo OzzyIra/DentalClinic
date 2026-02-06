@@ -1,29 +1,138 @@
 {% extends 'base.html' %}
 {% load clinic_tags %}
 
-{% block title %}Документы{% endblock %}
+{% block title %}Документы — {{ clinic.name }}{% endblock %}
 
 {% block content %}
-<h2>Документы для подписи пациентов</h2>
-<table class="table">
-    <thead>
-    <tr>
-        <th>Название</th>
-        <th>Описание</th>
-        <th>Действия</th>
-    </tr>
-    </thead>
-    <tbody>
-    <tr>
-        <td>Согласие на лечение</td>
-        <td>Форма согласия на медицинское вмешательство</td>
-        <td>
-            <a href="#" class="btn btn-sm btn-info">Печать</a>
-            <a href="#" class="btn btn-sm btn-warning">Изменить</a>
-            <a href="#" class="btn btn-sm btn-danger">Удалить</a>
-        </td>
-    </tr>
-    </tbody>
-</table>
-<a href="#" class="btn btn-primary">Добавить документ</a>
+<div class="container-fluid mt-3">
+    <h2>Документы</h2>
+    <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#add-document-modal">Добавить документ</button>
+
+    <table class="table documents-table">
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Описание документа</th>
+                <th>Дата создания</th>
+                <th>Файл</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody id="documents-list">
+            {% for doc in documents %}
+            <tr>
+                <td>{{ doc.id }}</td>
+                <td>{{ doc.title }}</td>
+                <td>{{ doc.created_at|date:"d.m.Y H:i" }}</td>
+                <td>
+                    {% if doc.file %}
+                    <a href="{{ doc.file.url }}" target="_blank">Скачать</a>
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-warning edit-doc"
+                            data-doc='{"id": {{ doc.id }}, "title": "{{ doc.title|escapejs }}", "description": "{{ doc.description|escapejs }}"}'>
+                        Изменить
+                    </button>
+                    <button class="btn btn-sm btn-danger delete-doc" data-id="{{ doc.id }}">Удалить</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Модальное окно -->
+<div class="modal fade" id="add-document-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить/Изменить документ</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="document-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="id" id="doc-id">
+                    <div class="mb-3">
+                        <label>Название</label>
+                        <input type="text" class="form-control" name="title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>Описание</label>
+                        <input type="text" class="form-control" name="description">
+                    </div>
+                    <div class="mb-3">
+                        <label>Файл (.docx)</label>
+                        <input type="file" class="form-control" name="file" accept=".docx">
+                        <small class="text-muted">Оставьте пустым, если не хотите менять файл</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('document-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+
+        try {
+            const id = formData.get('id');
+            const method = id ? 'POST' : 'POST';
+            const url = id ? `/api/documents/${id}/update/` : '/api/documents/create/';
+
+            const res = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+            if (res.ok) {
+                document.getElementById('add-document-modal').querySelector('.btn-close').click();
+                location.reload();
+            } else {
+                const err = await res.json();
+                alert('Ошибка: ' + err.error);
+            }
+        } catch (err) {
+            alert('Ошибка сети');
+        }
+    });
+
+    document.querySelectorAll('.edit-doc').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const docData = JSON.parse(e.target.dataset.doc);
+            const id = docData.id;
+            const title = docData.title;
+            const desc = docData.description;
+
+            document.getElementById('doc-id').value = id;
+            document.querySelector('#document-form input[name="title"]').value = title;
+            document.querySelector('#document-form input[name="description"]').value = desc;
+            new bootstrap.Modal(document.getElementById('add-document-modal')).show();
+        });
+    });
+
+    document.querySelectorAll('.delete-doc').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const id = e.target.dataset.id;
+            if (confirm('Удалить документ?')) {
+                try {
+                    const res = await fetch(`/api/documents/${id}/delete/`, {
+                        method: 'DELETE',
+                        headers: {
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        }
+                    });
+                    if (res.ok) location.reload();
+                } catch (err) {
+                    alert('Ошибка');
+                }
+            }
+        });
+    });
+</script>
 {% endblock %}

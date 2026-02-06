@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo
+from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo, Document
 from django.db.models import Count
 from datetime import date, datetime
 import json
@@ -782,3 +782,78 @@ def api_receptionist_detail(request, pk):
         'user_username': receptionist.user.username
     }
     return JsonResponse(data)
+
+
+# --- DOCUMENTS ---
+@login_required
+def documents_view(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    documents = Document.objects.all().order_by('-created_at')
+    return render(request, 'documents.html', {'documents': documents})
+
+
+@csrf_exempt
+@login_required
+def api_document_create(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        title = request.POST.get('title')
+        description = request.POST.get('description', '')
+        file = request.FILES.get('file')
+
+        doc = Document.objects.create(
+            title=title,
+            description=description,
+            file=file
+        )
+        return JsonResponse({
+            'id': doc.id,
+            'title': doc.title,
+            'description': doc.description,
+            'file_url': doc.file.url if doc.file else None,
+            'created_at': doc.created_at.strftime('%d.%m.%Y %H:%M')
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def api_document_delete(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        doc = get_object_or_404(Document, pk=pk)
+        doc.delete()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_document_update(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        doc = get_object_or_404(Document, pk=pk)
+        title = request.POST.get('title')
+        description = request.POST.get('description', '')
+        file = request.FILES.get('file')
+
+        doc.title = title
+        doc.description = description
+        if file:
+            doc.file = file
+        doc.save()
+
+        return JsonResponse({
+            'id': doc.id,
+            'title': doc.title,
+            'description': doc.description,
+            'file_url': doc.file.url if doc.file else None,
+            'created_at': doc.created_at.strftime('%d.%m.%Y %H:%M')
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)

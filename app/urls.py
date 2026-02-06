@@ -54,4 +54,9 @@ urlpatterns = [
     path('api/personnel/receptionists/<int:pk>/delete/', views.api_receptionist_delete, name='api_receptionist_delete'),
     path('api/personnel/receptionists/<int:pk>/', views.api_receptionist_detail, name='api_receptionist_detail'),
 
+    # DOCUMENTS
+    path('documents/', views.documents_view, name='documents_view'),
+    path('api/documents/create/', views.api_document_create, name='api_document_create'),
+    path('api/documents/<int:pk>/update/', views.api_document_update, name='api_document_update'),
+    path('api/documents/<int:pk>/delete/', views.api_document_delete, name='api_document_delete'),
 ]

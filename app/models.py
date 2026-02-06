@@ -370,8 +370,8 @@ class InvoiceService(models.Model):
 class Document(models.Model):
     title = models.CharField('Название', max_length=200)
     description = models.TextField('Описание', blank=True)
-    is_active = models.BooleanField('Активен', default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    file = models.FileField('Файл', upload_to='documents/', blank=True, null=True)
+    created_at = models.DateTimeField('Дата создания', auto_now_add=True)
 
     class Meta:
         verbose_name = 'Документ'
