@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% load clinic_tags %}
+
+{% block title %}Статистика{% endblock %}
+
+{% block content %}
+<h2>Статистика</h2>
+<form method="get">
+    <div class="row">
+        <div class="col-md-4">
+            <label>Начало</label>
+            <input type="date" name="start_date" class="form-control">
+        </div>
+        <div class="col-md-4">
+            <label>Конец</label>
+            <input type="date" name="end_date" class="form-control">
+        </div>
+        <div class="col-md-4">
+            <button type="submit" class="btn btn-primary mt-2">Применить</button>
+        </div>
+    </div>
+</form>
+
+<h3>Статистика по врачам</h3>
+<table class="table">
+    <thead>
+    <tr>
+        <th>Врач</th>
+        <th>Количество записей</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for doctor in doctors_stats %}
+    <tr>
+        <td>{{ doctor.get_full_name }}</td>
+        <td>{{ doctor.appointments_count }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

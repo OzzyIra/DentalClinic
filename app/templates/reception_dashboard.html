@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% load clinic_tags %}
+
+{% block title %}Регистратор — {{ clinic.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <h2>Панель регистратора</h2>
+    <p>Здесь будет отображаться информация для регистратора.</p>
+    <ul>
+        <li>Запись пациентов</li>
+        <li>Прием звонков</li>
+        <li>Работа с документами</li>
+    </ul>
+</div>
+{% endblock %}

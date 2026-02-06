@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from django import forms
 from django.db.models import F, Sum
 from django.core.exceptions import ValidationError
@@ -7,10 +8,13 @@ from .models import (
     User,
     Patient,
     Doctor,
+    Nurse,
+    Receptionist,
     Service,
     Appointment,
     Invoice,
     InvoiceService,
+    ClinicInfo,
 )
 
 
@@ -19,7 +23,26 @@ def user_has_admin_access(user):
     return user.is_superuser or (user.is_staff and user.role == 'admin')
 
 
-# Кастомный UserAdmin
+class CustomUserCreationForm(UserCreationForm):
+    first_name = forms.CharField(max_length=150, required=True, label="Имя")
+    last_name = forms.CharField(max_length=150, required=True, label="Фамилия")
+    phone = forms.CharField(max_length=20, required=True, label="Телефон")
+
+    class Meta:
+        model = User
+        fields = ('username', 'first_name', 'last_name', 'phone', 'role')
+
+
+class CustomUserChangeForm(UserChangeForm):
+    first_name = forms.CharField(max_length=150, required=True, label="Имя")
+    last_name = forms.CharField(max_length=150, required=True, label="Фамилия")
+    phone = forms.CharField(max_length=20, required=True, label="Телефон")
+
+    class Meta:
+        model = User
+        fields = ('username', 'first_name', 'last_name', 'phone', 'role')
+
+
 class CustomUserAdmin(BaseUserAdmin):
     def has_module_permission(self, request):
         return user_has_admin_access(request.user)
@@ -36,26 +59,43 @@ class CustomUserAdmin(BaseUserAdmin):
     def has_delete_permission(self, request, obj=None):
         return self.has_module_permission(request)
 
-    # Сделаем поля first_name, last_name, phone обязательными при создании
-    def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
-        # Сделаем поля обязательными
-        form.base_fields['first_name'].required = True
-        form.base_fields['last_name'].required = True
-        form.base_fields['phone'].required = True
-        return form
+    add_form = CustomUserCreationForm
+    form = CustomUserChangeForm
 
     list_display = ['username', 'email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active']
     list_filter = ['role', 'is_staff', 'is_active']
     search_fields = ['username', 'first_name', 'last_name', 'email']
 
-    fieldsets = BaseUserAdmin.fieldsets + (
-        ('Информация о сотруднике', {'fields': ('role', 'phone')}),
+    fieldsets = (
+        ('Личная информация', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Контактные данные', {'fields': ('phone',)}),
+        ('Аккаунт', {'fields': ('username', 'password')}),
+        ('Права доступа', {
+            'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
+        }),
+        ('Дополнительно', {'fields': ('role',)}),
     )
 
-    add_fieldsets = BaseUserAdmin.add_fieldsets + (
-        ('Информация о сотруднике', {'fields': ('role', 'phone')}),
+    add_fieldsets = (
+        ('Личная информация', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Контактные данные', {'fields': ('phone',)}),
+        ('Аккаунт', {'fields': ('username', 'password1', 'password2')}),
+        ('Права доступа', {
+            'fields': ('is_active', 'is_staff', 'groups', 'user_permissions'),
+        }),
+        ('Дополнительно', {'fields': ('role',)}),
     )
+
+
+@admin.register(ClinicInfo)
+class ClinicInfoAdmin(admin.ModelAdmin):
+    list_display = ['name', 'program_name']
+
+    def has_add_permission(self, request):
+        # Запрещаем создавать более одной записи
+        if ClinicInfo.objects.exists():
+            return False
+        return super().has_add_permission(request)
 
 
 # Кастомный PatientAdmin
@@ -93,7 +133,6 @@ class PatientAdmin(admin.ModelAdmin):
     )
 
 
-# Кастомный DoctorAdmin
 class DoctorAdmin(admin.ModelAdmin):
     def has_module_permission(self, request):
         return user_has_admin_access(request.user)
@@ -116,17 +155,29 @@ class DoctorAdmin(admin.ModelAdmin):
     list_editable = ['room', 'is_active']
     list_select_related = ('user',)
 
-    def save_model(self, request, obj, form, change):
-        # Проверяем, что у связанного пользователя есть имя, фамилия, телефон
-        if not obj.user.first_name.strip() or not obj.user.last_name.strip() or not obj.user.phone.strip():
-            raise ValidationError({
-                'user': "У пользователя должны быть заполнены имя, фамилия и телефон."
-            })
-        if not obj.specialty.strip():
-            raise ValidationError({
-                'specialty': "У врача должна быть указана специальность."
-            })
-        super().save_model(request, obj, form, change)
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        class DoctorForm(form):
+            def clean(self):
+                cleaned_data = super().clean()
+                user = cleaned_data.get('user')
+
+                if user:
+                    if not user.first_name.strip():
+                        self.add_error('user', "У пользователя должно быть заполнено имя.")
+                    if not user.last_name.strip():
+                        self.add_error('user', "У пользователя должно быть заполнена фамилия.")
+                    if not user.phone.strip():
+                        self.add_error('user', "У пользователя должен быть заполнен телефон.")
+
+                specialty = cleaned_data.get('specialty')
+                if specialty and not specialty.strip():
+                    self.add_error('specialty', "Специальность не может быть пустой.")
+
+                return cleaned_data
+
+        return DoctorForm
 
     @admin.display(description='Врач', ordering='user__last_name')
     def get_full_name(self, obj):
@@ -135,6 +186,99 @@ class DoctorAdmin(admin.ModelAdmin):
     @admin.display(description='Телефон')
     def get_phone(self, obj):
         return obj.user.phone if obj.user.phone else "—"
+
+
+class NurseAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    list_display = ['get_full_name', 'department', 'room', 'is_active']
+    list_filter = ['department', 'is_active']
+    search_fields = ['user__last_name', 'user__first_name']
+    list_select_related = ('user',)
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        class NurseForm(form):
+            def clean(self):
+                cleaned_data = super().clean()
+                user = cleaned_data.get('user')
+
+                if user:
+                    if not user.first_name.strip():
+                        self.add_error('user', "У пользователя должно быть заполнено имя.")
+                    if not user.last_name.strip():
+                        self.add_error('user', "У пользователя должно быть заполнена фамилия.")
+                    if not user.phone.strip():
+                        self.add_error('user', "У пользователя должен быть заполнен телефон.")
+
+                return cleaned_data
+
+        return NurseForm
+
+    @admin.display(description='Медсестра', ordering='user__last_name')
+    def get_full_name(self, obj):
+        return f"{obj.user.last_name} {obj.user.first_name}"
+
+
+# Кастомный ReceptionistAdmin
+class ReceptionistAdmin(admin.ModelAdmin):
+    def has_module_permission(self, request):
+        return user_has_admin_access(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    list_display = ['get_full_name', 'office', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['user__last_name', 'user__first_name']
+    list_select_related = ('user',)
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        class ReceptionistForm(form):
+            def clean(self):
+                cleaned_data = super().clean()
+                user = cleaned_data.get('user')
+
+                if user:
+                    if not user.first_name.strip():
+                        self.add_error('user', "У пользователя должно быть заполнено имя.")
+                    if not user.last_name.strip():
+                        self.add_error('user', "У пользователя должно быть заполнена фамилия.")
+                    if not user.phone.strip():
+                        self.add_error('user', "У пользователя должен быть заполнен телефон.")
+
+                return cleaned_data
+
+        return ReceptionistForm
+
+    @admin.display(description='Регистратор', ordering='user__last_name')
+    def get_full_name(self, obj):
+        return f"{obj.user.last_name} {obj.user.first_name}"
 
 
 # Кастомный ServiceAdmin
@@ -361,3 +505,5 @@ admin.site.register(Doctor, DoctorAdmin)
 admin.site.register(Service, ServiceAdmin)
 admin.site.register(Appointment, AppointmentAdmin)
 admin.site.register(Invoice, InvoiceAdmin)
+admin.site.register(Nurse, NurseAdmin)
+admin.site.register(Receptionist, ReceptionistAdmin)

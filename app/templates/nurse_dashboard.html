@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% load clinic_tags %}
+
+{% block title %}Медсестра — {{ clinic.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <h2>Панель медсестры</h2>
+    <p>Здесь будет отображаться информация для медсестры.</p>
+    <ul>
+        <li>Список пациентов на сегодня</li>
+        <li>Задания от врачей</li>
+        <li>Медицинские карты</li>
+    </ul>
+</div>
+{% endblock %}

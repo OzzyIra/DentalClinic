@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% load clinic_tags %}
+
+{% block title %}Услуги — {{ clinic.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Услуги</h2>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#serviceModal" onclick="resetForm()">Добавить услугу</button>
+    </div>
+
+    <table class="table table-striped">
+        <thead>
+        <tr>
+            <th>Название</th>
+            <th>Цена</th>
+            <th>Длительность</th>
+            <th>Действия</th>
+        </tr>
+        </thead>
+        <tbody id="services-list">
+        <!-- Здесь будут услуги -->
+        </tbody>
+    </table>
+</div>
+
+<!-- Модальное окно для услуги -->
+<div class="modal fade" id="serviceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить/Изменить услугу</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="service-form">
+                    <input type="hidden" name="id" id="service-id">
+                    <div class="mb-3">
+                        <label>Название</label>
+                        <input type="text" class="form-control" name="name" id="service-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>Цена</label>
+                        <input type="number" step="0.01" class="form-control" name="price" id="service-price" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>Длительность (мин)</label>
+                        <input type="number" min="10" step="10" class="form-control" name="duration"
+                               id="service-duration" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function resetForm() {
+        document.getElementById('service-form').reset();
+        document.getElementById('service-id').value = '';
+        document.querySelector('#serviceModal .modal-title').textContent = 'Добавить услугу';
+    }
+
+    // Загрузка услуг
+    async function loadServices() {
+        try {
+            const res = await fetch('/api/services/');
+            console.log('Status:', res.status);
+            if (res.status === 403) {
+                alert('Доступ запрещён. Проверьте права.');
+                return;
+            }
+            if (!res.ok) {
+                throw new Error(`HTTP error! status: ${res.status}`);
+            }
+            const services = await res.json();
+            console.log('Data received:', services);
+            const tbody = document.getElementById('services-list');
+            tbody.innerHTML = '';
+            services.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-id', s.id);
+                tr.innerHTML = `
+                    <td>${s.name}</td>
+                    <td>${s.price.toFixed(2)} руб.</td>
+                    <td>${s.duration} мин</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning edit-service" data-id="${s.id}">Изменить</button>
+                        <button class="btn btn-sm btn-danger delete-service" data-id="${s.id}">Удалить</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) {
+            console.error('Ошибка загрузки услуг:', e);
+            alert('Ошибка загрузки услуг: ' + e.message);
+        }
+    }
+
+    // AJAX для услуг (добавление/изменение)
+    document.getElementById('service-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const id = formData.get('id');
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/services/${id}/update/` : '/api/services/create/';
+        const data = Object.fromEntries(formData);
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (res.ok) {
+                document.getElementById('serviceModal').querySelector('button.btn-close').click();
+                loadServices();
+            } else {
+                alert('Ошибка: ' + (result.error || 'Неизвестная ошибка'));
+            }
+        } catch (err) {
+            alert('Сеть недоступна');
+        }
+    });
+
+    // Редактирование
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('edit-service')) {
+            const id = e.target.dataset.id;
+            fetch(`/api/services/${id}/`)
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('service-id').value = data.id;
+                    document.getElementById('service-name').value = data.name;
+                    document.getElementById('service-price').value = data.price;
+                    document.getElementById('service-duration').value = data.duration;
+                    document.querySelector('#serviceModal .modal-title').textContent = 'Изменить услугу';
+                    new bootstrap.Modal(document.getElementById('serviceModal')).show();
+                });
+        }
+    });
+
+    // Удаление
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('delete-service')) {
+            if (!confirm('Удалить услугу?')) return;
+            const id = e.target.dataset.id;
+            fetch(`/api/services/${id}/delete/`, { method: 'DELETE' })
+                .then(res => {
+                    if (res.ok) loadServices();
+                    else alert('Ошибка удаления');
+                });
+        }
+    });
+
+    loadServices();
+</script>
+{% endblock %}

@@ -7,6 +7,22 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.core.validators import RegexValidator, MinValueValidator
 
+
+# ==================== Клиника ====================
+class ClinicInfo(models.Model):
+    name = models.CharField('Название клиники', max_length=200)
+    program_name = models.CharField('Название программы', max_length=200, default='DentalClick')
+    address = models.TextField('Адрес', blank=True)
+    phone = models.CharField('Телефон', max_length=20, blank=True)
+
+    class Meta:
+        verbose_name = 'Информация о клинике'
+        verbose_name_plural = 'Информация о клинике'
+
+    def __str__(self):
+        return self.name
+
+
 # ==================== ПОЛЬЗОВАТЕЛЬ ====================
 phone_validator = RegexValidator(
     regex=r'^\+?\d{7,20}$',
@@ -23,6 +39,7 @@ class User(AbstractUser):
     ]
     role = models.CharField('Роль', max_length=20, choices=ROLE_CHOICES, default='doctor')
     phone = models.CharField('Телефон', max_length=20, blank=True)
+    middle_name = models.CharField('Отчество', max_length=50, blank=True, null=True)
 
     groups = models.ManyToManyField(
         'auth.Group',
@@ -80,7 +97,10 @@ class Doctor(models.Model):
         return f"Др. {self.user.last_name} {self.user.first_name}"
 
     def get_full_name(self):
-        return f"{self.user.last_name} {self.user.first_name}"
+        parts = [self.user.last_name, self.user.first_name]
+        if self.user.middle_name:
+            parts.append(self.user.middle_name)
+        return ' '.join(parts)
 
 
 # ==================== УСЛУГА ====================
@@ -96,6 +116,49 @@ class Service(models.Model):
 
     def __str__(self):
         return self.name
+
+
+# ==================== МЕДСЕСТРА ====================
+class Nurse(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='Пользователь')
+    department = models.CharField('Отделение', max_length=100, blank=True)
+    room = models.CharField('Кабинет', max_length=10, blank=True)
+    is_active = models.BooleanField('Активна', default=True)
+
+    class Meta:
+        verbose_name = 'Медсестра'
+        verbose_name_plural = 'Медсестры'
+        ordering = ['user__last_name']
+
+    def __str__(self):
+        return f"Медсестра {self.user.last_name} {self.user.first_name} "
+
+    def get_full_name(self):
+        parts = [self.user.last_name, self.user.first_name]
+        if self.user.middle_name:
+            parts.append(self.user.middle_name)
+        return ' '.join(parts)
+
+
+# ==================== РЕГИСТРАТОР ====================
+class Receptionist(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='Пользователь')
+    office = models.CharField('Офис', max_length=100, blank=True)
+    is_active = models.BooleanField('Активен', default=True)
+
+    class Meta:
+        verbose_name = 'Регистратор'
+        verbose_name_plural = 'Регистраторы'
+        ordering = ['user__last_name']
+
+    def __str__(self):
+        return f"Регистратор {self.user.last_name} {self.user.first_name}"
+
+    def get_full_name(self):
+        parts = [self.user.last_name, self.user.first_name]
+        if self.user.middle_name:
+            parts.append(self.user.middle_name)
+        return ' '.join(parts)
 
 
 # ==================== ЗАПИСЬ НА ПРИЕМ ====================
@@ -301,3 +364,18 @@ class InvoiceService(models.Model):
         if (self.price_at_time is None or Decimal(self.price_at_time) == Decimal('0')) and self.service:
             self.price_at_time = self.service.price
         super().save(*args, **kwargs)
+
+
+# models.py
+class Document(models.Model):
+    title = models.CharField('Название', max_length=200)
+    description = models.TextField('Описание', blank=True)
+    is_active = models.BooleanField('Активен', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Документ'
+        verbose_name_plural = 'Документы'
+
+    def __str__(self):
+        return self.title

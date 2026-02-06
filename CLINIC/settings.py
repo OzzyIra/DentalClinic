@@ -122,7 +122,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Для входа/выхода
 LOGIN_URL = 'login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
-LOGOUT_REDIRECT_URL = '/login/'
+LOGOUT_REDIRECT_URL = '/'
 
 # Custom User Model
 AUTH_USER_MODEL = 'app.User'

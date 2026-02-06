@@ -1,10 +1,14 @@
-from django.shortcuts import render, redirect
-from django.contrib.auth import authenticate, login
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import authenticate, login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from .models import Patient, Service, Appointment, Doctor
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo
 from django.db.models import Count
-from datetime import date
+from datetime import date, datetime
+import json
 
 
 # Проверка ролей
@@ -25,39 +29,80 @@ def is_doctor(user):
 
 
 def login_view(request):
+    if request.user.is_authenticated:
+        if request.user.is_superuser:
+            return redirect('/admin/')
+        elif is_admin(request.user):
+            return redirect('admin_dashboard')
+        elif is_doctor(request.user):
+            return redirect('doctor_dashboard')
+        elif is_receptionist(request.user):
+            return redirect('reception_dashboard')
+        elif is_nurse(request.user):
+            return redirect('nurse_dashboard')
+        else:
+            return redirect('admin_dashboard')
+
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            # Редирект в зависимости от роли
             if is_admin(user):
                 return redirect('admin_dashboard')
-            elif is_nurse(user):
-                return redirect('nurse_dashboard')  # пока заглушка
-            elif is_receptionist(user):
-                return redirect('reception_dashboard')  # пока заглушка
             elif is_doctor(user):
-                return redirect('doctor_dashboard')  # добавили для врача
+                return redirect('doctor_dashboard')
+            elif is_receptionist(user):
+                return redirect('reception_dashboard')
+            elif is_nurse(user):
+                return redirect('nurse_dashboard')
             else:
-                return redirect('admin_dashboard')  # по умолчанию
+                return redirect('admin_dashboard')
         else:
             messages.error(request, 'Неверный логин или пароль.')
     return render(request, 'login.html')
+
+
+def logout_view(request):
+    auth_logout(request)
+    return redirect('login')
+
+
+def access_denied(request):
+    return render(request, '403.html')
 
 
 @login_required
 def admin_dashboard(request):
     if not is_admin(request.user):
         return redirect('access_denied')
+
     today = date.today()
     appointments = Appointment.objects.filter(date_time__date=today).select_related('patient', 'doctor', 'doctor__user')
+
     scheduled = appointments.filter(status='scheduled')
+    waiting = appointments.filter(status='waiting')
+    active = appointments.filter(status='active')
     completed = appointments.filter(status='completed')
+
+    # Добавь это:
+    current_year = today.year
+    current_month = today.month - 1  # JS-месяцы: 0-based
+    months = [
+        {'value': i, 'name': name, 'selected': i == current_month}
+        for i, name in enumerate(['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн',
+                                  'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'])
+    ]
+
     context = {
         'scheduled': scheduled,
+        'waiting': waiting,
+        'active': active,
         'completed': completed,
+        'current_year': current_year,
+        'current_month': current_month,
+        'months': months,
     }
     return render(request, 'admin_dashboard.html', context)
 
@@ -66,18 +111,16 @@ def admin_dashboard(request):
 def doctor_dashboard(request):
     if not is_doctor(request.user):
         return redirect('access_denied')
-    # Пример: получить записи, назначенные этому врачу на сегодня
-    doctor_instance = Doctor.objects.get(user=request.user)
+    try:
+        doctor_instance = Doctor.objects.get(user=request.user)
+    except Doctor.DoesNotExist:
+        return redirect('access_denied')
     today = date.today()
     appointments = Appointment.objects.filter(doctor=doctor_instance, date_time__date=today)
     context = {
         'appointments': appointments,
     }
     return render(request, 'doctor_dashboard.html', context)
-
-
-def access_denied(request):
-    return render(request, '403.html')
 
 
 @login_required
@@ -97,24 +140,9 @@ def service_list(request):
 
 
 @login_required
-def schedule_view(request):
-    if not is_admin(request.user):
-        return redirect('access_denied')
-    doctors = Doctor.objects.filter(is_active=True)
-    appointments = Appointment.objects.select_related('patient', 'doctor').filter(
-        date_time__date=date.today()
-    )
-    return render(request, 'schedule.html', {
-        'doctors': doctors,
-        'appointments': appointments
-    })
-
-
-@login_required
 def stats_view(request):
     if not is_admin(request.user):
         return redirect('access_denied')
-    # Пример простой статистики
     total_patients = Patient.objects.count()
     total_appointments = Appointment.objects.count()
     completed_count = Appointment.objects.filter(status='completed').count()
@@ -127,3 +155,630 @@ def stats_view(request):
         'doctors_stats': doctors_stats,
     }
     return render(request, 'stats.html', context)
+
+
+@login_required
+def services_management(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    return render(request, 'services_management.html')
+
+
+@login_required
+def personnel_management(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    doctors = Doctor.objects.all()
+    nurses = Nurse.objects.all()
+    receptionists = Receptionist.objects.all()
+    users = User.objects.all()
+    return render(request, 'personnel_management.html', {
+        'doctors': doctors,
+        'nurses': nurses,
+        'receptionists': receptionists,
+        'users': users,
+    })
+
+
+@login_required
+def statistics_view(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    total_patients = Patient.objects.count()
+    total_appointments = Appointment.objects.count()
+    completed_count = Appointment.objects.filter(status='completed').count()
+    doctors_stats = Doctor.objects.annotate(appointments_count=Count('appointment'))
+
+    context = {
+        'total_patients': total_patients,
+        'total_appointments': total_appointments,
+        'completed_count': completed_count,
+        'doctors_stats': doctors_stats,
+    }
+    return render(request, 'statistics.html', context)
+
+
+@login_required
+def documents_view(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    return render(request, 'documents.html')
+
+
+@login_required
+def doctors_list(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    doctors = Doctor.objects.all()
+    return render(request, 'doctors_list.html', {'doctors': doctors})
+
+
+# ==================== API ====================
+
+@require_http_methods(["GET"])
+@login_required
+def api_services_list(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    services = Service.objects.all()
+    data = [{'id': s.id, 'name': s.name, 'price': float(s.price), 'duration': s.duration} for s in services]
+    return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required
+def api_service_create(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        data = json.loads(request.body)
+        service = Service.objects.create(
+            name=data['name'],
+            price=data['price'],
+            duration=data['duration']
+        )
+        return JsonResponse(
+            {'id': service.id, 'name': service.name, 'price': float(service.price), 'duration': service.duration})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@require_http_methods(["GET"])
+@login_required
+def api_service_detail(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    service = get_object_or_404(Service, pk=pk)
+    data = {
+        'id': service.id,
+        'name': service.name,
+        'price': float(service.price),
+        'duration': service.duration
+    }
+    return JsonResponse(data)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+@login_required
+def api_service_update(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    service = get_object_or_404(Service, pk=pk)
+    try:
+        data = json.loads(request.body)
+        service.name = data['name']
+        service.price = data['price']
+        service.duration = data['duration']
+        service.save()
+        return JsonResponse({
+            'id': service.id,
+            'name': service.name,
+            'price': float(service.price),
+            'duration': service.duration
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@login_required
+def api_service_delete(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    service = get_object_or_404(Service, pk=pk)
+    service.delete()
+    return JsonResponse({'success': True})
+
+
+@login_required
+def patients_search(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    patients = Patient.objects.all()
+    return render(request, 'patients_search.html', {'patients': patients})
+
+
+from django.db.models import Q
+
+
+@login_required
+def api_patients_search(request):
+    query = request.GET.get('q', '').strip()
+    if len(query) < 2:
+        return JsonResponse([], safe=False)
+
+    q_lower = query.lower()
+    patients = []
+
+    # Фильтрация в Python — для регистра
+    for p in Patient.objects.all():
+        if (q_lower in p.last_name.lower() or
+                q_lower in p.first_name.lower() or
+                q_lower in p.phone.lower()):
+            patients.append(p)
+            if len(patients) >= 10:
+                break
+
+    data = [{
+        'id': p.id,
+        'full_name': p.get_full_name(),
+        'phone': p.phone,
+        'birth_date': p.birth_date.isoformat()
+    } for p in patients]
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def patient_detail(request, pk):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    patient = get_object_or_404(Patient, pk=pk)
+    return render(request, 'patient_detail.html', {'patient': patient})
+
+
+from datetime import date
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+@login_required
+def api_patient_update(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    patient = get_object_or_404(Patient, pk=pk)
+    try:
+        data = json.loads(request.body)
+
+        birth_date_str = data.get('birth_date')
+        if birth_date_str:
+            patient.birth_date = date.fromisoformat(birth_date_str)  # ← Ключевая строка
+
+        patient.last_name = data['last_name']
+        patient.first_name = data['first_name']
+        patient.middle_name = data.get('middle_name', '')
+        patient.phone = data['phone']
+        patient.email = data.get('email', '')
+        patient.discount = int(data.get('discount', 0))
+        patient.notes = data.get('notes', '')
+
+        patient.save()
+
+        return JsonResponse({
+            'id': patient.id,
+            'full_name': patient.get_full_name(),
+            'phone': patient.phone,
+            'birth_date': patient.birth_date.isoformat(),  # Теперь это date → работает
+            'email': patient.email,
+            'discount': patient.discount,
+            'notes': patient.notes
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def api_schedule_by_date_and_doctor(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+
+    date_str = request.GET.get('date', '')
+    doctor_id = request.GET.get('doctor_id', None)
+
+    try:
+        selected_date = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+    except ValueError:
+        return JsonResponse({'error': 'Неверный формат даты'}, status=400)
+
+    appointments = Appointment.objects.filter(date_time__date=selected_date)
+
+    if doctor_id:
+        try:
+            doctor = Doctor.objects.get(id=doctor_id)
+            appointments = appointments.filter(doctor=doctor)
+        except Doctor.DoesNotExist:
+            return JsonResponse({'error': 'Врач не найден'}, status=400)
+
+    scheduled = appointments.filter(status='scheduled')
+    waiting = appointments.filter(status='waiting')
+    active = appointments.filter(status='active')
+    completed = appointments.filter(status='completed')
+
+    data = {
+        'scheduled': [{
+            'id': a.id,
+            'patient_name': a.patient.get_full_name(),
+            'time': a.get_time_slot_display(),
+            'doctor_name': a.doctor.get_full_name()
+        } for a in scheduled],
+        'waiting': [{
+            'id': a.id,
+            'patient_name': a.patient.get_full_name(),
+            'doctor_name': a.doctor.get_full_name()
+        } for a in waiting],
+        'active': [{
+            'id': a.id,
+            'patient_name': a.patient.get_full_name(),
+            'doctor_name': a.doctor.get_full_name()
+        } for a in active],
+        'completed': [{
+            'id': a.id,
+            'patient_name': a.patient.get_full_name(),
+            'time': a.date_time.strftime('%H:%M'),
+            'doctor_name': a.doctor.get_full_name()
+        } for a in completed],
+    }
+
+    return JsonResponse(data)
+
+
+# --- DOCTOR ---
+
+@login_required
+def api_doctors_list(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    doctors = Doctor.objects.all()
+    data = []
+    for d in doctors:
+        data.append({
+            'id': d.id,
+            'full_name': d.get_full_name(),
+            'specialty': d.specialty,
+            'room': d.room,
+            'is_active': d.is_active,
+            'user_username': d.user.username
+        })
+    return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+@login_required
+def api_doctor_create(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        data = json.loads(request.body)
+        user = User.objects.create_user(
+            username=data['username'],
+            password=data['password'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            role='doctor'
+        )
+        user.middle_name = data.get('middle_name', '')
+        user.save()
+        doctor = Doctor.objects.create(
+            user=user,
+            specialty=data['specialty'],
+            room=data.get('room', ''),
+            is_active=data.get('is_active', True)
+        )
+        return JsonResponse({
+            'id': doctor.id,
+            'full_name': doctor.get_full_name(),
+            'specialty': doctor.specialty,
+            'room': doctor.room,
+            'is_active': doctor.is_active
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_doctor_update(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        doctor = get_object_or_404(Doctor, pk=pk)
+        data = json.loads(request.body)
+        doctor.user.first_name = data['first_name']
+        doctor.user.last_name = data['last_name']
+        doctor.user.middle_name = data.get('middle_name', '')
+        doctor.user.username = data['username']
+        if data.get('password'):
+            doctor.user.set_password(data['password'])
+        doctor.user.save()
+        doctor.specialty = data['specialty']
+        doctor.room = data.get('room', '')
+        doctor.is_active = data.get('is_active', True)
+        doctor.save()
+        return JsonResponse({
+            'id': doctor.id,
+            'full_name': doctor.get_full_name(),
+            'specialty': doctor.specialty,
+            'room': doctor.room,
+            'is_active': doctor.is_active
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_doctor_delete(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        doctor = get_object_or_404(Doctor, pk=pk)
+        doctor.user.delete()
+        doctor.delete()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def api_doctor_detail(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    doctor = get_object_or_404(Doctor, pk=pk)
+    data = {
+        'id': doctor.id,
+        'full_name': doctor.get_full_name(),
+        'specialty': doctor.specialty,
+        'room': doctor.room,
+        'is_active': doctor.is_active,
+        'user_username': doctor.user.username
+    }
+    return JsonResponse(data)
+
+
+# --- NURSE ---
+@login_required
+def nurse_dashboard(request):
+    if not is_nurse(request.user):
+        return redirect('access_denied')
+    return render(request, 'nurse_dashboard.html')
+
+
+@login_required
+def api_nurses_list(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    nurses = Nurse.objects.all()
+    data = []
+    for n in nurses:
+        data.append({
+            'id': n.id,
+            'full_name': n.get_full_name(),
+            'department': n.department,
+            'room': n.room,
+            'is_active': n.is_active,
+            'user_username': n.user.username
+        })
+    return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+@login_required
+def api_nurse_create(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        data = json.loads(request.body)
+        user = User.objects.create_user(
+            username=data['username'],
+            password=data['password'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            role='nurse'
+        )
+        user.middle_name = data.get('middle_name', '')
+        user.save()
+
+        nurse = Nurse.objects.create(
+            user=user,
+            department=data.get('department', ''),
+            room=data.get('room', ''),
+            is_active=data.get('is_active', True)
+        )
+        return JsonResponse({
+            'id': nurse.id,
+            'full_name': nurse.get_full_name(),
+            'department': nurse.department,
+            'room': nurse.room,
+            'is_active': nurse.is_active
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_nurse_update(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        nurse = get_object_or_404(Nurse, pk=pk)
+        data = json.loads(request.body)
+        nurse.user.first_name = data['first_name']
+        nurse.user.last_name = data['last_name']
+        nurse.user.middle_name = data.get('middle_name', '')
+        nurse.user.username = data['username']
+        if data.get('password'):
+            nurse.user.set_password(data['password'])
+        nurse.user.save()
+        nurse.department = data.get('department', '')
+        nurse.room = data.get('room', '')
+        nurse.is_active = data.get('is_active', True)
+        nurse.save()
+        return JsonResponse({
+            'id': nurse.id,
+            'full_name': nurse.get_full_name(),
+            'department': nurse.department,
+            'room': nurse.room,
+            'is_active': nurse.is_active
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_nurse_delete(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        nurse = get_object_or_404(Nurse, pk=pk)
+        nurse.user.delete()
+        nurse.delete()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def api_nurse_detail(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    nurse = get_object_or_404(Nurse, pk=pk)
+    data = {
+        'id': nurse.id,
+        'full_name': nurse.get_full_name(),
+        'department': nurse.department,
+        'room': nurse.room,
+        'is_active': nurse.is_active,
+        'user_username': nurse.user.username
+    }
+    return JsonResponse(data)
+
+
+# --- RECEPTIONIST ---
+@login_required
+def reception_dashboard(request):
+    if not is_receptionist(request.user):
+        return redirect('access_denied')
+    return render(request, 'reception_dashboard.html')
+
+
+@login_required
+def api_receptionists_list(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    receptionists = Receptionist.objects.all()
+    data = []
+    for r in receptionists:
+        data.append({
+            'id': r.id,
+            'full_name': r.get_full_name(),
+            'office': r.office,
+            'is_active': r.is_active,
+            'user_username': r.user.username
+        })
+    return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+@login_required
+def api_receptionist_create(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        data = json.loads(request.body)
+        user = User.objects.create_user(
+            username=data['username'],
+            password=data['password'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            role='receptionist'
+        )
+        user.middle_name = data.get('middle_name', '')
+        user.save()
+
+        receptionist = Receptionist.objects.create(
+            user=user,
+            office=data.get('office', ''),
+            is_active=data.get('is_active', True)
+        )
+        return JsonResponse({
+            'id': receptionist.id,
+            'full_name': receptionist.get_full_name(),
+            'office': receptionist.office,
+            'is_active': receptionist.is_active
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_receptionist_update(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        receptionist = get_object_or_404(Receptionist, pk=pk)
+        data = json.loads(request.body)
+        receptionist.user.first_name = data['first_name']
+        receptionist.user.last_name = data['last_name']
+        receptionist.user.middle_name = data.get('middle_name', '')
+        receptionist.user.username = data['username']
+        if data.get('password'):
+            receptionist.user.set_password(data['password'])
+        receptionist.user.save()
+        receptionist.office = data.get('office', '')
+        receptionist.is_active = data.get('is_active', True)
+        receptionist.save()
+        return JsonResponse({
+            'id': receptionist.id,
+            'full_name': receptionist.get_full_name(),
+            'office': receptionist.office,
+            'is_active': receptionist.is_active
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_receptionist_delete(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        receptionist = get_object_or_404(Receptionist, pk=pk)
+        receptionist.user.delete()
+        receptionist.delete()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def api_receptionist_detail(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    receptionist = get_object_or_404(Receptionist, pk=pk)
+    data = {
+        'id': receptionist.id,
+        'full_name': receptionist.get_full_name(),
+        'office': receptionist.office,
+        'is_active': receptionist.is_active,
+        'user_username': receptionist.user.username
+    }
+    return JsonResponse(data)

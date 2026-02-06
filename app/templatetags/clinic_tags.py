@@ -5,6 +5,15 @@ from django.template.defaultfilters import date as date_filter
 register = template.Library()
 
 
+@register.simple_tag
+def get_clinic_info():
+    from app.models import ClinicInfo
+    return ClinicInfo.objects.first() or ClinicInfo(
+        name="Клиника",
+        program_name="Программа"
+    )
+
+
 # Фильтр: добавляет "руб." к числу
 @register.filter
 def rubles(value):

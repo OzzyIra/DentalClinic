@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% load clinic_tags %}
+
+{% block title %}Картотека — {{ clinic.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <h2>Картотека пациентов</h2>
+
+    <div class="mb-3">
+        <input type="text" id="search-input" class="form-control" placeholder="Поиск по ФИО, телефону...">
+        <div id="suggestions" class="dropdown-menu mt-1" style="display: none; max-height: 200px; overflow-y: auto;"></div>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ФИО</th>
+                <th>Телефон</th>
+                <th>Дата рождения</th>
+            </tr>
+        </thead>
+        <tbody id="patients-table-body">
+            {% for patient in patients %}
+            <tr data-patient-id="{{ patient.id }}">
+                <td>{{ patient.get_full_name }}</td>
+                <td>{{ patient.phone }}</td>
+                <td>{{ patient.birth_date|date:"d.m.Y" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3" class="text-center">Нет пациентов</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const searchInput = document.getElementById('search-input');
+    const suggestionsDiv = document.getElementById('suggestions');
+
+    searchInput.addEventListener('input', debounce(async (e) => {
+        const query = e.target.value.trim();
+        if (query.length < 2) {
+            suggestionsDiv.style.display = 'none';
+            return;
+        }
+
+        const res = await fetch(`/api/patients/search/?q=${encodeURIComponent(query)}`);
+        const patients = await res.json();
+
+        if (patients.length === 0) {
+            suggestionsDiv.innerHTML = '<div class="dropdown-item disabled">Ничего не найдено</div>';
+        } else {
+            suggestionsDiv.innerHTML = patients.map(p => `
+                <a class="dropdown-item" href="#" data-id="${p.id}" data-name="${p.full_name}">
+                    <strong>${p.full_name}</strong><br>
+                    <small>${p.phone}</small>
+                </a>
+            `).join('');
+        }
+
+        suggestionsDiv.style.display = 'block';
+    }, 300));
+
+    //  Клик по подсказке
+    suggestionsDiv.addEventListener('click', (e) => {
+        let target = e.target;
+
+        while (target && target.tagName !== 'A') {
+            target = target.parentElement;
+        }
+
+        if (target && target.tagName === 'A') {
+            e.preventDefault();
+            const id = target.getAttribute('data-id');
+            if (id) {
+                window.location.href = `/patient/${id}/`;
+            }
+        }
+    });
+
+    // Клик по строке таблицы
+    document.getElementById('patients-table-body').addEventListener('click', (e) => {
+        const row = e.target.closest('tr[data-patient-id]');
+        if (row) {
+            const id = row.getAttribute('data-patient-id');
+            if (id) {
+                window.location.href = `/patient/${id}/`;
+            }
+        }
+    });
+
+    // Закрытие подсказок при клике вне поля
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+            suggestionsDiv.style.display = 'none';
+        }
+    });
+
+    // Функция debounce для ограничения запросов
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+</script>
+{% endblock %}
