@@ -8,6 +8,7 @@ from django.views.decorators.http import require_http_methods
 from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo, Document, Invoice
 from django.db.models import Count, Sum, Q
 from datetime import date, datetime, timedelta
+from django.utils import timezone
 import json
 
 
@@ -373,10 +374,11 @@ def api_schedule_by_date_and_doctor(request):
         except Doctor.DoesNotExist:
             return JsonResponse({'error': 'Врач не найден'}, status=400)
 
-    scheduled = appointments.filter(status='scheduled')
-    waiting = appointments.filter(status='waiting')
-    active = appointments.filter(status='active')
-    completed = appointments.filter(status='completed')
+    # ✅ Сортируем по времени
+    scheduled = appointments.filter(status='scheduled').order_by('date_time')
+    waiting = appointments.filter(status='waiting').order_by('date_time')
+    active = appointments.filter(status='active').order_by('date_time')
+    completed = appointments.filter(status='completed').order_by('date_time')
 
     data = {
         'scheduled': [{
@@ -893,3 +895,121 @@ def api_stats_data(request):
     }
 
     return JsonResponse(data)
+
+
+# Добавление пациента
+@csrf_exempt
+@login_required
+def api_patient_create(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        data = json.loads(request.body)
+        patient = Patient.objects.create(
+            last_name=data['last_name'],
+            first_name=data['first_name'],
+            middle_name=data.get('middle_name', ''),
+            phone=data['phone'],
+            email=data.get('email', ''),
+            birth_date=datetime.strptime(data['birth_date'], '%Y-%m-%d') if data.get('birth_date') else None,
+            discount=data.get('discount', 0),
+            notes=data.get('notes', '')
+        )
+        return JsonResponse({
+            'id': patient.id,
+            'full_name': patient.get_full_name(),
+            'phone': patient.phone
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_appointment_create(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        data = json.loads(request.body)
+
+        # Получаем данные
+        patient_id = data['patient_id']
+        doctor_id = data['doctor_id']
+        datetime_str = data['datetime']  # формат: '2026-02-09T10:00'
+        status = data.get('status', 'scheduled')
+        duration = data.get('duration', 15)  # ✅ Добавь duration
+
+        # Проверяем существование
+        patient = Patient.objects.get(id=patient_id)
+        doctor = Doctor.objects.get(id=doctor_id)
+
+        # Преобразуем строку в datetime
+        naive_dt = datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M')
+
+        # ✅ Проверяем, кратно ли 10 минутам
+        if naive_dt.minute % 10 != 0:
+            return JsonResponse({'error': 'Время должно быть кратно 10 минутам'}, status=400)
+
+        # ✅ Проверяем, кратно ли duration 10 минутам
+        if duration % 10 != 0:
+            return JsonResponse({'error': 'Длительность должна быть кратна 10 минутам'}, status=400)
+
+        # ✅ Делаем aware
+        aware_dt = timezone.make_aware(naive_dt)
+
+        # Создаём запись
+        appointment = Appointment.objects.create(
+            patient=patient,
+            doctor=doctor,
+            date_time=aware_dt,
+            status=status,
+            duration=duration
+        )
+
+        return JsonResponse({
+            'id': appointment.id,
+            'patient_name': appointment.patient.get_full_name(),
+            'doctor_name': appointment.doctor.get_full_name(),
+            'datetime': appointment.date_time.strftime('%H:%M'),
+            'status': appointment.status
+        })
+    except Patient.DoesNotExist:
+        return JsonResponse({'error': 'Пациент не найден'}, status=400)
+    except Doctor.DoesNotExist:
+        return JsonResponse({'error': 'Врач не найден'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@login_required
+def api_appointment_update_status(request, pk):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+    try:
+        data = json.loads(request.body)
+        new_status = data['status']
+
+        # Проверяем, что статус допустим
+        valid_statuses = ['scheduled', 'waiting', 'active', 'completed']
+        if new_status not in valid_statuses:
+            return JsonResponse({'error': 'Недопустимый статус'}, status=400)
+
+        # ✅ Обновляем статус напрямую, без валидации
+        rows_updated = Appointment.objects.filter(id=pk).update(status=new_status)
+
+        if rows_updated == 0:
+            return JsonResponse({'error': 'Запись не найдена'}, status=404)
+
+        # Возвращаем обновлённые данные
+        appointment = Appointment.objects.get(id=pk)
+
+        return JsonResponse({
+            'success': True,
+            'id': appointment.id,
+            'status': appointment.status
+        })
+    except Appointment.DoesNotExist:
+        return JsonResponse({'error': 'Запись не найдена'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)

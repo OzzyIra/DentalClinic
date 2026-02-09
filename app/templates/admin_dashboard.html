@@ -1,13 +1,21 @@
 {% extends 'base.html' %}
 {% load clinic_tags %}
+{% load static %}  <!-- ✅ Добавлено -->
 
 {% block title %}{{ clinic.name }} — Главврач{% endblock %}
 
 {% block content %}
+
+<!-- Передаём данные в JS -->
+<script>
+    document.body.dataset.currentYear = {{ current_year }};
+    document.body.dataset.currentMonth = {{ current_month }};
+</script>
+{% csrf_token %}
 <div class="container-fluid mt-3">
     <div class="row">
         <!-- Записи на сегодня -->
-        <div class="col-md-3 col-section">
+        <div class="col-md-3 col-section column" data-status="scheduled" id="scheduled-column">
             <div class="section-title" id="section-title">
                 Записи на сегодня
                 <button id="add-btn" class="btn btn-sm btn-success ms-2">+</button>
@@ -18,20 +26,23 @@
         </div>
 
         <!-- Ожидают приема -->
-        <div class="col-md-3 col-section">
+        <div class="col-md-3 col-section column" data-status="waiting" id="waiting-column">
             <div class="section-title">Ожидают приема</div>
+            <small>Всего: <span id="waiting-count">0</span></small>
             <div id="waiting-list"></div>
         </div>
 
         <!-- На приеме -->
-        <div class="col-md-3 col-section">
+        <div class="col-md-3 col-section column" data-status="active" id="active-column">
             <div class="section-title">На приеме</div>
+            <small>Всего: <span id="active-count">0</span></small>
             <div id="active-list"></div>
         </div>
 
         <!-- Прием завершили -->
-        <div class="col-md-3 col-section">
+        <div class="col-md-3 col-section column" data-status="completed" id="completed-column">
             <div class="section-title">Прием завершили</div>
+            <small>Всего: <span id="completed-count">0</span></small>
             <div id="completed-list"></div>
         </div>
     </div>
@@ -60,161 +71,96 @@
     </div>
 </div>
 
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Данные из контекста
-        const currentYear = {{ current_year }};
-        const currentMonth = {{ current_month }};
 
-        // Инициализация календаря
-        const triggerBtn = document.getElementById('calendar-trigger');
-        const modalEl = document.getElementById('calendarModal');
-        const modal = new bootstrap.Modal(modalEl);
+<!-- Модальное окно для добавления пациента и записи -->
+<div class="modal fade" id="addPatientAndAppointmentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить пациента и записать на приём</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Поиск пациента -->
+                <div class="mb-3">
+                    <label>Фамилия пациента</label>
+                    <input type="text" class="form-control" id="search-patient-input-modal"
+                           placeholder="Введите фамилию...">
+                    <div id="search-results-modal" class="mt-2"></div>
+                    <div id="selected-patient-info" class="mt-2"></div>
+                </div>
 
-        // Генерация календаря
-        function generateCalendar(year, month) {
-            const firstDay = new Date(year, month, 1);
-            const lastDay = new Date(year, month + 1, 0);
-            const daysInMonth = lastDay.getDate();
-            const startDayOfWeek = firstDay.getDay();
+                <!-- Или создать нового -->
+                <div class="mb-3">
+                    <button class="btn btn-outline-secondary w-100" id="show-create-form-btn">Добавить нового пациента
+                    </button>
+                </div>
 
-            const container = document.getElementById('cal-days');
-            container.innerHTML = '';
+                <!-- Форма создания пациента (скрыта) -->
+                <div id="create-patient-form-modal" class="d-none">
+                    <form id="create-patient-form-modal-inner">  <!-- ✅ Добавлен id -->
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label>Фамилия</label>
+                                <input type="text" class="form-control" name="last_name" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label>Имя</label>
+                                <input type="text" class="form-control" name="first_name" required>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-6">
+                                <label>Отчество</label>
+                                <input type="text" class="form-control" name="middle_name">
+                            </div>
+                            <div class="col-md-6">
+                                <label>Телефон</label>
+                                <input type="text" class="form-control" name="phone" required>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-6">
+                                <label>Email</label>
+                                <input type="email" class="form-control" name="email">
+                            </div>
+                            <div class="col-md-6">
+                                <label>Дата рождения</label>
+                                <input type="date" class="form-control" name="birth_date">
+                            </div>
+                        </div>
+                    </form>
+                </div>
 
-            // Пустые ячейки до первого дня
-            for (let i = 0; i < startDayOfWeek; i++) {
-                const div = document.createElement('div');
-                div.style.width = '28px';
-                div.style.height = '28px';
-                div.style.border = '1px solid #eee';
-                div.style.display = 'flex';
-                div.style.alignItems = 'center';
-                div.style.justifyContent = 'center';
-                div.style.fontSize = '0.8rem';
-                div.style.cursor = 'default';
-                container.appendChild(div);
-            }
+                <!-- Выбор врача и времени -->
+                <div id="appointment-section" class="d-none">
+                    <hr>
+                    <div class="mb-3">
+                        <label>Врач</label>
+                        <select class="form-select" id="doctor-select-modal">
+                            <!-- Будет заполнено динамически -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>Дата и время</label>
+                        <input type="datetime-local" class="form-control" id="datetime-input-modal">
+                    </div>
+                    <!-- ✅ Правильная разметка для длительности -->
+                    <div class="mb-3">
+                        <label>Длительность приёма (мин)</label>
+                        <select class="form-select" id="duration-select-modal">
+                            <option value="10">10 минут</option>
+                            <option value="15">15 минут</option>
+                            <option value="20">20 минут</option>
+                            <option value="30">30 минут</option>
+                            <option value="40">40 минут</option>
+                            <option value="50">50 минут</option>
+                            <option value="60">60 минут</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-success w-100" id="create-appointment-btn">Записать на приём</button>
+                </div>
 
-            // Дни месяца
-            for (let day = 1; day <= daysInMonth; day++) {
-                const div = document.createElement('div');
-                div.textContent = day;
-                div.style.width = '28px';
-                div.style.height = '28px';
-                div.style.border = '1px solid #eee';
-                div.style.display = 'flex';
-                div.style.alignItems = 'center';
-                div.style.justifyContent = 'center';
-                div.style.fontSize = '0.8rem';
-                div.style.cursor = 'pointer';
-                div.classList.add('cal-day');
-                div.dataset.date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-                // Подсветка сегодня
-                const today = new Date();
-                if (year === today.getFullYear() && month === today.getMonth() && day === today.getDate()) {
-                    div.style.backgroundColor = '#00C8B3';
-                    div.style.color = 'white';
-                    div.style.fontWeight = 'bold';
-                }
-
-                div.addEventListener('click', () => {
-                    document.querySelectorAll('#cal-days .cal-day').forEach(d => d.style.backgroundColor = '');
-                    div.style.backgroundColor = '#e0f7fa';
-                    document.getElementById('selected-date').value = div.dataset.date;
-                });
-
-                container.appendChild(div);
-            }
-        }
-
-        // Открытие модального окна
-        triggerBtn.addEventListener('click', function() {
-            generateCalendar(currentYear, currentMonth);
-            modal.show();
-        });
-
-        // Применить дату
-        document.getElementById('apply-calendar').addEventListener('click', function() {
-            const date = document.getElementById('selected-date').value;
-            if (!date) return;
-            loadSchedule(date, '');
-            modal.hide();
-        });
-
-        // Загрузка расписания
-        async function loadSchedule(date, doctorId) {
-            try {
-                const res = await fetch(`/api/schedule/?date=${date}${doctorId ? '&doctor_id=' + doctorId : ''}`);
-                if (!res.ok) throw new Error('Ошибка загрузки');
-
-                const data = await res.json();
-
-                const [y, m, d] = date.split('-');
-                const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн',
-                                'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
-                const newTitle = `Записи на ${d}.${months[parseInt(m)-1]}.${y}`;
-                const sectionTitle = document.getElementById('section-title');
-                sectionTitle.innerHTML = newTitle;
-                sectionTitle.innerHTML += `
-                    <button id="add-btn" class="btn btn-sm btn-success ms-2">+</button>
-                    <button id="calendar-trigger" class="btn btn-sm btn-outline-secondary ms-1">📅</button>
-                `;
-                setupEventListeners();
-
-                // Обновляем колонки
-                updateSection('scheduled', data.scheduled || []);
-                updateSection('waiting', data.waiting || []);
-                updateSection('active', data.active || []);
-                updateSection('completed', data.completed || []);
-            } catch (e) {
-                alert('Ошибка: ' + e.message);
-            }
-        }
-
-        function updateSection(section, items) {
-            const container = document.getElementById(`${section}-list`);
-            const countEl = document.getElementById(`${section}-count`);
-
-            if (!container) return;
-
-            container.innerHTML = items.length > 0
-                ? items.map(i => `<div class="patient-card">${i.patient_name} ${i.time || ''} вр ${i.doctor_name}</div>`).join('')
-                : '<p>Нет записей</p>';
-
-            if (countEl) countEl.textContent = items.length;
-        }
-
-        function setupEventListeners() {
-            const addBtn = document.getElementById('add-btn');
-            const calTrigger = document.getElementById('calendar-trigger');
-
-            if (addBtn) {
-                addBtn.removeEventListener('click', addBtn.handler);
-                addBtn.handler = () => alert('Добавить запись (заглушка)');
-                addBtn.addEventListener('click', addBtn.handler);
-            }
-
-            if (calTrigger) {
-                calTrigger.removeEventListener('click', calTrigger.handler);
-                calTrigger.handler = () => {
-                    generateCalendar(currentYear, currentMonth);
-                    modal.show();
-                };
-                calTrigger.addEventListener('click', calTrigger.handler);
-            }
-        }
-
-        // скрытое поле для выбранной даты
-        if (!document.getElementById('selected-date')) {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.id = 'selected-date';
-            document.body.appendChild(input);
-        }
-
-        // Инициализация событий
-        setupEventListeners();
-    });
-</script>
-{% endblock %}
+                <!-- ✅ Подключение JS-файла -->
+                <script src="{% static 'js/admin_dashboard.js' %}"></script>
+                {% endblock %}

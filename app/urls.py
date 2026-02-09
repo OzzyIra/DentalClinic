@@ -32,7 +32,10 @@ urlpatterns = [
     path('api/patients/search/', views.api_patients_search, name='api_patients_search'),
     path('api/patients/<int:pk>/update/', views.api_patient_update, name='api_patient_update'),
     path('api/schedule/', views.api_schedule_by_date_and_doctor, name='api_schedule_by_date_and_doctor'),
-
+    path('api/patients/create/', views.api_patient_create, name='api_patient_create'),
+    path('api/appointments/create/', views.api_appointment_create, name='api_appointment_create'),
+    path('api/appointments/<int:pk>/update-status/', views.api_appointment_update_status,
+         name='api_appointment_update_status'),
     # DOCTOR
     path('api/personnel/doctors/', views.api_doctors_list, name='api_doctors_list'),
     path('api/personnel/doctors/create/', views.api_doctor_create, name='api_doctor_create'),

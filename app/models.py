@@ -165,6 +165,8 @@ class Receptionist(models.Model):
 class Appointment(models.Model):
     STATUS_CHOICES = [
         ('scheduled', 'Запланирован'),
+        ('waiting', 'Ожидает'),
+        ('active', 'На приёме'),
         ('completed', 'Завершен'),
         ('cancelled', 'Отменен'),
         ('no_show', 'Не пришел'),
