@@ -1,10 +1,136 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
-</head>
-<body>
-$END$
-</body>
-</html>
+{% extends 'base.html' %}
+{% load clinic_tags %}
+
+{% block title %}Статистика — {{ clinic.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-5">
+    <h2 class="stats-title">Статистика</h2>
+
+    <!-- Фильтры -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <label>С даты</label>
+            <input type="date" class="form-control" id="start-date">
+        </div>
+        <div class="col-md-3">
+            <label>По дату</label>
+            <input type="date" class="form-control" id="end-date">
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary mt-2" id="apply-filters">Применить</button>
+        </div>
+    </div>
+
+    <!-- Графики -->
+    <div class="row">
+        <div class="col-md-6">
+            <canvas id="patients-chart" width="400" height="200"></canvas>
+        </div>
+        <div class="col-md-6">
+            <canvas id="doctors-chart" width="400" height="200"></canvas>
+        </div>
+    </div>
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <canvas id="revenue-chart" width="400" height="200"></canvas>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    let patientsChart, doctorsChart, revenueChart;
+
+    async function loadStats(startDate = '', endDate = '') {
+        const params = new URLSearchParams({ startDate, endDate });
+        const res = await fetch(`/api/stats/data/?${params}`);
+        const data = await res.json();
+
+        // График пациентов
+        const ctx1 = document.getElementById('patients-chart').getContext('2d');
+        if (patientsChart) patientsChart.destroy();
+        patientsChart = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: data.patients_by_month.map(x => x.month),
+                datasets: [{
+                    label: 'Пациенты',
+                    data: data.patients_by_month.map(x => x.count),
+                    backgroundColor: 'rgba(178,182,175, 0.6)',
+                    borderColor: 'rgba(107,109,105, 1)',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+
+        // График врачей
+        const ctx2 = document.getElementById('doctors-chart').getContext('2d');
+        if (doctorsChart) doctorsChart.destroy();
+        doctorsChart = new Chart(ctx2, {
+            type: 'doughnut',
+            data: {
+                labels: data.appointments_by_doctor.map(x => `${x.doctor__user__last_name} ${x.doctor__user__first_name}`),
+                datasets: [{
+                    data: data.appointments_by_doctor.map(x => x.count),
+                    backgroundColor: [
+                        'rgba(178,182,175, 0.8)',
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(255, 205, 86, 0.8)',
+                        'rgba(75, 192, 192, 0.8)',
+                        'rgba(153, 102, 255, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(107,109,105, 1)',
+                        'rgba(54, 162, 235, 1)',
+                        'rgba(255, 205, 86, 1)',
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(153, 102, 255, 1)'
+                    ],
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                cutout: '50%'
+            }
+        });
+
+        // График прибыли
+        const ctx3 = document.getElementById('revenue-chart').getContext('2d');
+        if (revenueChart) revenueChart.destroy();
+        revenueChart = new Chart(ctx3, {
+            type: 'line',
+            data: {
+                labels: data.revenue_by_service.map(x => x.appointment__invoice__items__service__name),
+                datasets: [{
+                    label: 'Прибыль (руб.)',
+                    data: data.revenue_by_service.map(x => x.total),
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true
+            }
+        });
+    }
+
+    document.getElementById('apply-filters').addEventListener('click', () => {
+        const start = document.getElementById('start-date').value;
+        const end = document.getElementById('end-date').value;
+        loadStats(start, end);
+    });
+
+    window.onload = () => {
+        loadStats();
+    };
+</script>
+{% endblock %}

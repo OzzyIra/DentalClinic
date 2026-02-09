@@ -11,15 +11,21 @@
 <body>
 
 <!-- Header -->
+
 <header>
     {% load clinic_tags %}
     {% get_clinic_info as clinic %}
     <div class="header">
-        <span class="program-name">{{ clinic.program_name }}</span>
+        <div class="logo-container">
+            <img src="{% static 'images/logo.jpeg' %}" alt="Логотип" class="logo-img">
+            <a href="/about/" class="program-name-link">{{ clinic.program_name }}</a>
+        </div>
         <span class="clinic-name">{{ clinic.name }}</span>
         {% if user.is_authenticated %}
-        <span class="user-info">Привет, {{ user.get_full_name|default:user.username }}</span>
-        <a class="btn btn-light logout-btn" href="/logout/">Выйти</a>
+        <div class="user-actions">
+            <span class="user-info">Привет, {{ user.get_full_name|default:user.username }}</span>
+            <a class="btn btn-light logout-btn" href="/logout/">Выйти</a>
+        </div>
         {% else %}
         <a class="btn btn-light" href="/login/">Войти</a>
         {% endif %}
@@ -28,47 +34,47 @@
 
 <!-- Навигация -->
 {% if user.is_authenticated %}
-  {% if user.role == 'admin' %}
-    <nav>
-        <ul class="nav nav-tabs nav-justified">
-            <li class="nav-item"><a class="nav-link" href="/dashboard/">Рассписание</a></li>
-            <li class="nav-item"><a class="nav-link" href="/services-management/">Услуги</a></li>
-            <li class="nav-item"><a class="nav-link" href="/personnel/">Персонал</a></li>
-            <li class="nav-item"><a class="nav-link" href="/stats-full/">Статистика</a></li>
-            <li class="nav-item"><a class="nav-link" href="/documents/">Документы</a></li>
-        </ul>
-        <ul class="nav nav-tabs nav-justified mt-2">
-            <li class="nav-item"><a class="nav-link" href="/patients-search/">Картотека</a></li>
-        </ul>
-    </nav>
-  {% else %}
-    {% if user.role == 'doctor' %}
-      <nav>
-          <ul class="nav nav-tabs nav-justified">
-              <li class="nav-item"><a class="nav-link" href="/doctor/">Мои записи</a></li>
-              <li class="nav-item"><a class="nav-link" href="/patients/">Пациенты</a></li>
-          </ul>
-      </nav>
-    {% else %}
-      {% if user.role == 'nurse' %}
-        <nav>
-            <ul class="nav nav-tabs nav-justified">
-                <li class="nav-item"><a class="nav-link" href="/nurse/">Мои задачи</a></li>
-                <li class="nav-item"><a class="nav-link" href="/patients/">Пациенты</a></li>
-            </ul>
-        </nav>
-      {% else %}
-        {% if user.role == 'receptionist' %}
-          <nav>
-              <ul class="nav nav-tabs nav-justified">
-                  <li class="nav-item"><a class="nav-link" href="/reception/">Записи</a></li>
-                  <li class="nav-item"><a class="nav-link" href="/patients/">Пациенты</a></li>
-              </ul>
-          </nav>
-        {% endif %}
-      {% endif %}
-    {% endif %}
-  {% endif %}
+{% if user.role == 'admin' %}
+<nav>
+    <ul class="nav nav-tabs nav-justified">
+        <li class="nav-item"><a class="nav-link" href="/dashboard/">Рассписание</a></li>
+        <li class="nav-item"><a class="nav-link" href="/services-management/">Услуги</a></li>
+        <li class="nav-item"><a class="nav-link" href="/personnel/">Персонал</a></li>
+        <li class="nav-item"><a class="nav-link" href="/stats-full/">Статистика</a></li>
+        <li class="nav-item"><a class="nav-link" href="/documents/">Документы</a></li>
+    </ul>
+    <ul class="nav nav-tabs nav-justified mt-2">
+        <li class="nav-item"><a class="nav-link" href="/patients-search/">Картотека</a></li>
+    </ul>
+</nav>
+{% else %}
+{% if user.role == 'doctor' %}
+<nav>
+    <ul class="nav nav-tabs nav-justified">
+        <li class="nav-item"><a class="nav-link" href="/doctor/">Мои записи</a></li>
+        <li class="nav-item"><a class="nav-link" href="/patients/">Пациенты</a></li>
+    </ul>
+</nav>
+{% else %}
+{% if user.role == 'nurse' %}
+<nav>
+    <ul class="nav nav-tabs nav-justified">
+        <li class="nav-item"><a class="nav-link" href="/nurse/">Мои задачи</a></li>
+        <li class="nav-item"><a class="nav-link" href="/patients/">Пациенты</a></li>
+    </ul>
+</nav>
+{% else %}
+{% if user.role == 'receptionist' %}
+<nav>
+    <ul class="nav nav-tabs nav-justified">
+        <li class="nav-item"><a class="nav-link" href="/reception/">Записи</a></li>
+        <li class="nav-item"><a class="nav-link" href="/patients/">Пациенты</a></li>
+    </ul>
+</nav>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
 {% endif %}
 
 <main>

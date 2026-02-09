@@ -5,18 +5,18 @@ from . import views
 urlpatterns = [
     path('', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
+    path('about/', views.about_view, name='about_view'),
     path('dashboard/', views.admin_dashboard, name='admin_dashboard'),
     path('doctor/', views.doctor_dashboard, name='doctor_dashboard'),
     path('patients/', views.patient_list, name='patient_list'),
     path('services/', views.service_list, name='service_list'),
-    path('stats/', views.stats_view, name='stats'),
     path('nurse/', views.nurse_dashboard, name='nurse_dashboard'),
     path('reception/', views.reception_dashboard, name='reception_dashboard'),
 
     # Новые URL для админа
     path('services-management/', views.services_management, name='services_management'),
     path('personnel/', views.personnel_management, name='personnel_management'),
-    path('stats-full/', views.statistics_view, name='statistics_view'),
+    path('stats-full/', views.stats_full_view, name='stats_full_view'),
     path('documents/', views.documents_view, name='documents_view'),
     path('doctors/', views.doctors_list, name='doctors_list'),
     path('access-denied/', views.access_denied, name='access_denied'),
@@ -59,4 +59,7 @@ urlpatterns = [
     path('api/documents/create/', views.api_document_create, name='api_document_create'),
     path('api/documents/<int:pk>/update/', views.api_document_update, name='api_document_update'),
     path('api/documents/<int:pk>/delete/', views.api_document_delete, name='api_document_delete'),
+
+    # STATISTICS
+    path('api/stats/data/', views.api_stats_data, name='api_stats_data'),
 ]

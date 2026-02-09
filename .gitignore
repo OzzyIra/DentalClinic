@@ -31,3 +31,6 @@ config.py
 *.log
 staticfiles/
 media/
+djenv/
+node_modules/
+clinic.zip

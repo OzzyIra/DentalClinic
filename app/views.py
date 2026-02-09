@@ -5,9 +5,9 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo, Document
-from django.db.models import Count
-from datetime import date, datetime
+from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo, Document, Invoice
+from django.db.models import Count, Sum, Q
+from datetime import date, datetime, timedelta
 import json
 
 
@@ -108,6 +108,14 @@ def admin_dashboard(request):
 
 
 @login_required
+def about_view(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    clinic = ClinicInfo.objects.first()  # или как у тебя получается
+    return render(request, 'about.html', {'clinic': clinic})
+
+
+@login_required
 def doctor_dashboard(request):
     if not is_doctor(request.user):
         return redirect('access_denied')
@@ -140,24 +148,6 @@ def service_list(request):
 
 
 @login_required
-def stats_view(request):
-    if not is_admin(request.user):
-        return redirect('access_denied')
-    total_patients = Patient.objects.count()
-    total_appointments = Appointment.objects.count()
-    completed_count = Appointment.objects.filter(status='completed').count()
-    doctors_stats = Doctor.objects.annotate(appointments_count=Count('appointment'))
-
-    context = {
-        'total_patients': total_patients,
-        'total_appointments': total_appointments,
-        'completed_count': completed_count,
-        'doctors_stats': doctors_stats,
-    }
-    return render(request, 'stats.html', context)
-
-
-@login_required
 def services_management(request):
     if not is_admin(request.user):
         return redirect('access_denied')
@@ -178,27 +168,6 @@ def personnel_management(request):
         'receptionists': receptionists,
         'users': users,
     })
-
-
-@login_required
-def statistics_view(request):
-    if not is_admin(request.user):
-        return redirect('access_denied')
-    start_date = request.GET.get('start_date')
-    end_date = request.GET.get('end_date')
-
-    total_patients = Patient.objects.count()
-    total_appointments = Appointment.objects.count()
-    completed_count = Appointment.objects.filter(status='completed').count()
-    doctors_stats = Doctor.objects.annotate(appointments_count=Count('appointment'))
-
-    context = {
-        'total_patients': total_patients,
-        'total_appointments': total_appointments,
-        'completed_count': completed_count,
-        'doctors_stats': doctors_stats,
-    }
-    return render(request, 'statistics.html', context)
 
 
 @login_required
@@ -857,3 +826,70 @@ def api_document_update(request, pk):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
+
+
+# СТАТИСТИКА
+@login_required
+def stats_full_view(request):
+    if not is_admin(request.user):
+        return redirect('access_denied')
+    return render(request, 'stats_full.html')
+
+
+@login_required
+def api_stats_data(request):
+    if not is_admin(request.user):
+        return JsonResponse({'error': 'Доступ запрещён'}, status=403)
+
+    # Фильтры
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    # Преобразование дат
+    if start_date:
+        start_date = datetime.strptime(start_date, '%Y-%m-%d')
+    else:
+        start_date = datetime.now() - timedelta(days=30)
+
+    if end_date:
+        end_date = datetime.strptime(end_date, '%Y-%m-%d')
+    else:
+        end_date = datetime.now()
+
+    # 1. Пациенты по месяцам
+    patients_by_month = Patient.objects.filter(
+        created_at__range=[start_date, end_date]
+    ).extra(select={'month': "strftime('%%Y-%%m', created_at)"}).values('month').annotate(count=Count('id'))
+
+    # 2. Записи по врачам (все врачи, даже с 0 записей)
+    doctors_with_appointments = Appointment.objects.filter(
+        date_time__range=[start_date, end_date]
+    ).values('doctor__id').annotate(count=Count('id'))
+
+    # Словарь: { doctor_id: count }
+    doctor_counts = {item['doctor__id']: item['count'] for item in doctors_with_appointments}
+
+    # Получаем всех врачей
+    all_doctors = Doctor.objects.all()
+    appointments_by_doctor = []
+    for doctor in all_doctors:
+        count = doctor_counts.get(doctor.id, 0)  # Если нет записей, то 0
+        if count > 0 or True:  # Показывать всех врачей (или только с записями)
+            appointments_by_doctor.append({
+                'doctor__user__last_name': doctor.user.last_name,
+                'doctor__user__first_name': doctor.user.first_name,
+                'count': count
+            })
+
+    # 3. Прибыль по услугам
+    invoices = Invoice.objects.filter(
+        created_at__range=[start_date, end_date]
+    ).values('appointment__invoice__items__service__name').annotate(total=Sum('final_amount'))
+
+    data = {
+        'patients_by_month': list(patients_by_month),
+        'appointments_by_doctor': appointments_by_doctor,
+        'revenue_by_service': list(invoices)
+    }
+
+    return JsonResponse(data)
