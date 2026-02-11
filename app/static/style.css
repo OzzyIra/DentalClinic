@@ -1,7 +1,6 @@
 /* static/style.css */
 
 /* Шапка */
-/* Шапка */
 .header {
     background-color: #00C8B3;
     color: white;
@@ -12,6 +11,7 @@
     font-weight: bold;
     font-family: 'New York', -apple-system, BlinkMacSystemFont, sans-serif;
 }
+
 .logo-container {
     display: flex;
     align-items: center;
@@ -24,6 +24,7 @@
     width: auto;
     border-radius: 4px;
 }
+
 /* Название программы — с отступом слева */
 .program-name-link {
     text-decoration: none;
@@ -67,6 +68,7 @@
     font-size: 0.9rem;
     font-weight: 500;
 }
+
 /* Навигация */
 .nav-tabs .nav-link {
     font-size: 1rem;
@@ -79,16 +81,28 @@
     background-color: #e0f7fa;
 }
 
-/* Секции */
-.section-title {
+/* ✅ Унифицированные заголовки колонок */
+.column-header {
     background-color: #00C8B3;
     color: white;
-    padding: 5px 10px;
+    padding: 10px 5px;  /* ✅ Увеличь padding */
     font-weight: bold;
     text-align: center;
     font-size: 1rem;
+    min-height: 50px;   /* ✅ Фиксированная высота */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.2); /* ✅ Добавь стиль */
+    gap: 5px; /* ✅ Отступ между текстом и кнопками */
 }
 
+/* Убираем старый стиль */
+.section-title {
+    display: none; /* ❌ Старый стиль скрыт */
+}
+
+/* Карточки пациентов */
 .patient-card {
     background: #f0f4f8;
     border: 1px solid #ddd;
@@ -96,6 +110,7 @@
     margin: 5px 0;
     border-radius: 5px;
     font-size: 0.9rem;
+    cursor: move;
 }
 
 .col-section {
@@ -218,4 +233,18 @@
     border-radius: 6px;
     padding: 10px;
     border: 1px solid #b5b8b1; /* ✅ Цвет границы */
+}
+
+.chart-container {
+    background-color: #ffffff;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    height: 250px;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
 }

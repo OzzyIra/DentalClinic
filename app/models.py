@@ -179,7 +179,7 @@ class Appointment(models.Model):
         ('other', 'Другое'),
     ]
 
-    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, verbose_name='Пациент')
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, verbose_name='Пациент', related_name='appointments')
     doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, verbose_name='Врач')
     date_time = models.DateTimeField('Дата и время приема')
     status = models.CharField('Статус', max_length=20, choices=STATUS_CHOICES, default='scheduled')
@@ -230,9 +230,8 @@ class Appointment(models.Model):
         if self.date_time and self.date_time < timezone.now():
             errors['date_time'] = 'Нельзя записывать на прошедшее время'
 
-        # Проверка: время кратно 10 минутам
-        if self.date_time and (
-                self.date_time.minute % 10 != 0 or self.date_time.second != 0 or self.date_time.microsecond != 0):
+        # ✅ Проверка: время кратно 10 минутам (только минуты)
+        if self.date_time and self.date_time.minute % 10 != 0:
             errors['date_time'] = 'Время должно быть кратно 10 минутам (например: 10:00, 10:10, 10:20)'
 
         # Проверка: длительность кратна 10 минутам

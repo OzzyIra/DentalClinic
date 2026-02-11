@@ -4,7 +4,7 @@
 {% block title %}Статистика — {{ clinic.name }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-5">
+<div class="container-fluid mt-4">
     <h2 class="stats-title">Статистика</h2>
 
     <!-- Фильтры -->
@@ -25,15 +25,21 @@
     <!-- Графики -->
     <div class="row">
         <div class="col-md-6">
-            <canvas id="patients-chart" width="400" height="200"></canvas>
+            <div class="chart-container">
+                <canvas id="patients-chart" width="300" height="200"></canvas>
+            </div>
         </div>
         <div class="col-md-6">
-            <canvas id="doctors-chart" width="400" height="200"></canvas>
+            <div class="chart-container">
+                <canvas id="doctors-chart" width="300" height="200"></canvas>
+            </div>
         </div>
     </div>
     <div class="row mt-4">
         <div class="col-md-6">
-            <canvas id="revenue-chart" width="400" height="200"></canvas>
+            <div class="chart-container">
+                <canvas id="revenue-chart" width="300" height="200"></canvas>
+            </div>
         </div>
     </div>
 </div>
@@ -64,21 +70,28 @@
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: { beginAtZero: true }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
                 }
             }
         });
 
-        // График врачей
+        // График врачей (только с записями > 0)
+        const doctorsWithAppointments = data.appointments_by_doctor.filter(x => x.count > 0);
         const ctx2 = document.getElementById('doctors-chart').getContext('2d');
         if (doctorsChart) doctorsChart.destroy();
         doctorsChart = new Chart(ctx2, {
             type: 'doughnut',
             data: {
-                labels: data.appointments_by_doctor.map(x => `${x.doctor__user__last_name} ${x.doctor__user__first_name}`),
+                labels: doctorsWithAppointments.map(x => `${x.doctor__user__last_name} ${x.doctor__user__first_name}`),
                 datasets: [{
-                    data: data.appointments_by_doctor.map(x => x.count),
+                    data: doctorsWithAppointments.map(x => x.count),
                     backgroundColor: [
                         'rgba(178,182,175, 0.8)',
                         'rgba(54, 162, 235, 0.8)',
@@ -98,7 +111,17 @@
             },
             options: {
                 responsive: true,
-                cutout: '50%'
+                maintainAspectRatio: false,
+                cutout: '50%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            boxWidth: 12
+                        }
+                    }
+                }
             }
         });
 
@@ -114,11 +137,18 @@
                     data: data.revenue_by_service.map(x => x.total),
                     borderColor: 'rgb(255, 99, 132)',
                     backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                    tension: 0.1
+                    tension: 0.1,
+                    fill: true
                 }]
             },
             options: {
-                responsive: true
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                }
             }
         });
     }

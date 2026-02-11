@@ -17,7 +17,7 @@ urlpatterns = [
     path('services-management/', views.services_management, name='services_management'),
     path('personnel/', views.personnel_management, name='personnel_management'),
     path('stats-full/', views.stats_full_view, name='stats_full_view'),
-    path('documents/', views.documents_view, name='documents_view'),
+    path('documents/', views.documents_view, name='documents_view'),  # ✅ Один раз
     path('doctors/', views.doctors_list, name='doctors_list'),
     path('access-denied/', views.access_denied, name='access_denied'),
     path('patients-search/', views.patients_search, name='patients_search'),
@@ -58,7 +58,6 @@ urlpatterns = [
     path('api/personnel/receptionists/<int:pk>/', views.api_receptionist_detail, name='api_receptionist_detail'),
 
     # DOCUMENTS
-    path('documents/', views.documents_view, name='documents_view'),
     path('api/documents/create/', views.api_document_create, name='api_document_create'),
     path('api/documents/<int:pk>/update/', views.api_document_update, name='api_document_update'),
     path('api/documents/<int:pk>/delete/', views.api_document_delete, name='api_document_delete'),

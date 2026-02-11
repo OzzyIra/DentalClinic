@@ -1,5 +1,6 @@
-// ✅ Переменная для хранения текущей даты
+// ✅ Переменные для хранения состояния
 let currentDate = null;
+let selectedPatientId = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     // Данные из контекста (получаются из HTML)
@@ -95,6 +96,17 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!date) return;
         currentDate = date; // ✅ Сохраняем дату
         localStorage.setItem('selectedDate', currentDate); // ✅ Сохраняем в localStorage
+
+        // ✅ Обновляем заголовок с датой
+        const [y, m, d] = date.split('-');
+        const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн',
+                        'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+        const newTitle = `Записи на ${d}.${months[parseInt(m)-1]}.${y}`;
+        const sectionTitleText = document.getElementById('section-title-text');
+        if (sectionTitleText) {
+            sectionTitleText.textContent = newTitle;
+        }
+
         loadSchedule(date, '');
         calendarModal.hide();
     });
@@ -106,18 +118,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!res.ok) throw new Error('Ошибка загрузки');
 
             const data = await res.json();
-
-            const [y, m, d] = date.split('-');
-            const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн',
-                            'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
-            const newTitle = `Записи на ${d}.${months[parseInt(m)-1]}.${y}`;
-            const sectionTitle = document.getElementById('section-title');
-            sectionTitle.innerHTML = newTitle;
-            sectionTitle.innerHTML += `
-                <button id="add-btn" class="btn btn-sm btn-success ms-2">+</button>
-                <button id="calendar-trigger" class="btn btn-sm btn-outline-secondary ms-1">📅</button>
-            `;
-            setupEventListeners();
 
             // Обновляем колонки
             updateSection('scheduled', data.scheduled || []);
@@ -178,7 +178,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // ✅ Drag & Drop (без reload)
+    // Drag & Drop
     function setupDragAndDrop() {
         const columns = document.querySelectorAll('.column');
         columns.forEach(col => {
@@ -196,7 +196,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 col.classList.remove('drag-over');
 
                 const appointmentId = e.dataTransfer.getData('text/plain');
-                const newStatus = col.dataset.status; // scheduled, waiting, active, completed
+                const newStatus = col.dataset.status; // например: 'waiting', 'active', 'completed'
+
+                // ✅ Проверяем, можно ли перейти в этот статус
+                const currentCard = document.querySelector(`.patient-card[data-id="${appointmentId}"]`);
+                // Найдём текущую колонку (откуда перетащили)
+                const currentColumn = currentCard.closest('.column');
+                const currentStatus = currentColumn.dataset.status; // например: 'scheduled'
+
+                // ✅ Определим, можно ли перейти из currentStatus в newStatus
+                const isValidTransition = isValidStatusTransition(currentStatus, newStatus);
+
+                if (!isValidTransition) {
+                    alert(`Нельзя перевести пациента из "${getStatusLabel(currentStatus)}" в "${getStatusLabel(newStatus)}".`);
+                    return;
+                }
 
                 try {
                     const res = await fetch(`/api/appointments/${appointmentId}/update-status/`, {
@@ -209,7 +223,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
 
                     if (res.ok) {
-                        // ✅ Не перезагружаем страницу, а обновляем расписание
                         loadSchedule(currentDate, ''); // ✅ Обновляем с текущей датой
                     } else {
                         const err = await res.json();
@@ -220,6 +233,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
+    }
+
+    // ✅ Функция проверки перехода
+    function isValidStatusTransition(from, to) {
+        const allowedTransitions = {
+            'scheduled': ['waiting', 'cancelled'],
+            'waiting': ['active', 'cancelled'],
+            'active': ['completed', 'cancelled'],
+            'completed': [], // нельзя никуда
+            'cancelled': [], // обычно нельзя никуда, но можно вернуть в scheduled если отменили по ошибке
+            'no_show': []    // если пациента не было — нельзя вернуть
+        };
+
+        const allowed = allowedTransitions[from] || [];
+        return allowed.includes(to);
+    }
+
+    // ✅ Вспомогательная функция для отображения названия статуса
+    function getStatusLabel(status) {
+        const labels = {
+            'scheduled': 'Записан',
+            'waiting': 'Ожидает',
+            'active': 'На приёме',
+            'completed': 'Завершён',
+            'cancelled': 'Отменён',
+            'no_show': 'Не пришёл'
+        };
+        return labels[status] || status;
     }
 
     // ✅ Открытие нового модального окна
@@ -234,8 +275,16 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('search-patient-input-modal').value = '';
         document.getElementById('search-results-modal').innerHTML = '';
         document.getElementById('selected-patient-info').innerHTML = '';
-        document.getElementById('create-patient-form-modal').classList.add('d-none');
         document.getElementById('appointment-section').classList.add('d-none');
+
+        // ✅ Сброс формы создания
+        document.getElementById('create-patient-form-modal-inner').reset();
+
+        // ✅ Переключи вкладку на "Поиск"
+        const searchTab = document.querySelector('#search-tab');
+        if (searchTab) {
+            bootstrap.Tab.getInstance(searchTab)?.show() || new bootstrap.Tab(searchTab).show();
+        }
     }
 
     // ✅ Поиск пациента в модальном окне
@@ -273,23 +322,48 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         document.getElementById('appointment-section').classList.remove('d-none');
-        loadDoctorsForAppointment();
+        loadDoctorsForAppointment(); // ✅ Вызов функции
     };
 
-    // ✅ Показать форму создания пациента
-    document.getElementById('show-create-form-btn')?.addEventListener('click', () => {
-        document.getElementById('create-patient-form-modal').classList.remove('d-none');
-        document.getElementById('appointment-section').classList.remove('d-none');
-        loadDoctorsForAppointment();
+    // ✅ Сброс формы при переключении вкладок
+    document.querySelectorAll('#patientTabs button').forEach(tab => {
+        tab.addEventListener('shown.bs.tab', function (event) {
+            if (event.target.id === 'search-tab') {
+                // При возврате на поиск — сбросить создание
+                document.getElementById('create-patient-form-modal-inner').reset();
+                selectedPatientId = null;
+                document.getElementById('selected-patient-info').innerHTML = '';
+                document.getElementById('appointment-section').classList.add('d-none');
+            }
+        });
     });
 
-    // ✅ Создать нового пациента
-    document.getElementById('create-patient-form-modal-inner')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const formData = new FormData(form);
+    // ✅ Загрузка врачей для записи
+    async function loadDoctorsForAppointment() {
+        try {
+            const res = await fetch('/api/personnel/doctors/');
+            const doctors = await res.json();
 
-        // Преобразуем FormData в объект
+            const select = document.getElementById('doctor-select-modal');
+            if (select) {
+                select.innerHTML = '';
+
+                doctors.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.full_name;
+                    select.appendChild(option);
+                });
+            }
+        } catch (err) {
+            console.error('Ошибка загрузки врачей:', err);
+        }
+    }
+
+    // ✅ Создать пациента (отдельная кнопка)
+    document.getElementById('create-patient-btn')?.addEventListener('click', async () => {
+        const form = document.getElementById('create-patient-form-modal-inner');
+        const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
 
         try {
@@ -306,6 +380,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 const patient = await res.json();
                 selectedPatientId = patient.id;
 
+                // ✅ Показываем блок записи
+                document.getElementById('appointment-section').classList.remove('d-none');
+                loadDoctorsForAppointment();
+
+                // Обновляем сообщение
                 document.getElementById('selected-patient-info').innerHTML = `
                     <div class="alert alert-success">
                         Создан пациент: <strong>${patient.full_name}</strong> (${patient.phone})
@@ -320,27 +399,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // ✅ Загрузка врачей
-    async function loadDoctorsForAppointment() {
-        try {
-            const res = await fetch('/api/personnel/doctors/');
-            const doctors = await res.json();
-
-            const select = document.getElementById('doctor-select-modal');
-            select.innerHTML = '';
-
-            doctors.forEach(doc => {
-                const option = document.createElement('option');
-                option.value = doc.id;
-                option.textContent = doc.full_name;
-                select.appendChild(option);
-            });
-
-        } catch (err) {
-            console.error('Ошибка загрузки врачей:', err);
-        }
-    }
-
     // ✅ Создать запись
     document.getElementById('create-appointment-btn')?.addEventListener('click', async () => {
         const doctorSelect = document.getElementById('doctor-select-modal');
@@ -351,100 +409,37 @@ document.addEventListener('DOMContentLoaded', function() {
         const datetime = datetimeInput ? datetimeInput.value : '';
         const duration = durationSelect ? parseInt(durationSelect.value) : 15; // по умолчанию 15
 
-        // Проверяем, есть ли форма создания пациента
-        const createPatientForm = document.getElementById('create-patient-form-modal-inner');
-        const isCreatingPatient = !document.getElementById('create-patient-form-modal').classList.contains('d-none');
+        if (!selectedPatientId || !doctorId || !datetime) {
+            alert('Заполните все поля');
+            return;
+        }
 
-        if (isCreatingPatient) {
-            // Если создаём нового пациента
-            if (!doctorId || !datetime) {
-                alert('Выберите врача и время');
-                return;
+        try {
+            const res = await fetch('/api/appointments/create/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    patient_id: selectedPatientId,
+                    doctor_id: doctorId,
+                    datetime: datetime,
+                    status: 'scheduled',
+                    duration: duration
+                })
+            });
+
+            if (res.ok) {
+                alert('Запись создана!');
+                new bootstrap.Modal(document.getElementById('addPatientAndAppointmentModal')).hide();
+                loadSchedule(currentDate, ''); // ✅ Обновляем расписание с текущей датой
+            } else {
+                const err = await res.json();
+                alert('Ошибка: ' + err.error);
             }
-
-            const formData = new FormData(createPatientForm);
-            const patientData = Object.fromEntries(formData.entries());
-
-            try {
-                // 1. Создаём пациента
-                const patientRes = await fetch('/api/patients/create/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken')
-                    },
-                    body: JSON.stringify(patientData)
-                });
-
-                if (!patientRes.ok) {
-                    const err = await patientRes.json();
-                    alert('Ошибка создания пациента: ' + err.error);
-                    return;
-                }
-
-                const patient = await patientRes.json();
-
-                // 2. Создаём запись
-                const appointmentRes = await fetch('/api/appointments/create/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken')
-                    },
-                    body: JSON.stringify({
-                        patient_id: patient.id,
-                        doctor_id: doctorId,
-                        datetime: datetime,
-                        status: 'scheduled',
-                        duration: duration  // ✅ Передаём выбранную длительность
-                    })
-                });
-
-                if (appointmentRes.ok) {
-                    alert('Пациент и запись созданы!');
-                    new bootstrap.Modal(document.getElementById('addPatientAndAppointmentModal')).hide();
-                    loadSchedule(currentDate, ''); // ✅ Обновляем расписание с текущей датой
-                } else {
-                    const err = await appointmentRes.json();
-                    alert('Ошибка создания записи: ' + err.error);
-                }
-            } catch (err) {
-                alert('Ошибка сети: ' + err.message);
-            }
-        } else {
-            // Если выбран существующий пациент
-            if (!selectedPatientId || !doctorId || !datetime) {
-                alert('Заполните все поля');
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/appointments/create/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken')
-                    },
-                    body: JSON.stringify({
-                        patient_id: selectedPatientId,
-                        doctor_id: doctorId,
-                        datetime: datetime,
-                        status: 'scheduled',
-                        duration: duration  // ✅ Передаём выбранную длительность
-                    })
-                });
-
-                if (res.ok) {
-                    alert('Запись создана!');
-                    new bootstrap.Modal(document.getElementById('addPatientAndAppointmentModal')).hide();
-                    loadSchedule(currentDate, ''); // ✅ Обновляем расписание с текущей датой
-                } else {
-                    const err = await res.json();
-                    alert('Ошибка: ' + err.error);
-                }
-            } catch (err) {
-                alert('Ошибка сети: ' + err.message);
-            }
+        } catch (err) {
+            alert('Ошибка сети: ' + err.message);
         }
     });
 

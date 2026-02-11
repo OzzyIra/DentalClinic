@@ -5,16 +5,18 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo, Document, Invoice
-from django.db.models import Count, Sum, Q
-from datetime import date, datetime, timedelta
+from .models import Patient, Service, Appointment, Doctor, Nurse, Receptionist, User, ClinicInfo, Document, \
+    InvoiceService
+from datetime import datetime, timedelta
+from django.db.models import Count, Sum, F
 from django.utils import timezone
 import json
+from django.db.models.functions import TruncMonth
 
 
 # Проверка ролей
 def is_admin(user):
-    return user.is_staff and user.role == 'admin'
+    return user.role == 'admin'
 
 
 def is_nurse(user):
@@ -112,7 +114,7 @@ def admin_dashboard(request):
 def about_view(request):
     if not is_admin(request.user):
         return redirect('access_denied')
-    clinic = ClinicInfo.objects.first()  # или как у тебя получается
+    clinic = ClinicInfo.objects.first()
     return render(request, 'about.html', {'clinic': clinic})
 
 
@@ -837,65 +839,70 @@ def stats_full_view(request):
         return redirect('access_denied')
     return render(request, 'stats_full.html')
 
-
 @login_required
 def api_stats_data(request):
     if not is_admin(request.user):
         return JsonResponse({'error': 'Доступ запрещён'}, status=403)
 
-    # Фильтры
-    start_date = request.GET.get('start_date')
-    end_date = request.GET.get('end_date')
+    # ✅ Исправлено: startDate → start_date (нет, наоборот!)
+    start_date_str = request.GET.get('startDate')  # ✅
+    end_date_str = request.GET.get('endDate')      # ✅
 
-    # Преобразование дат
-    if start_date:
-        start_date = datetime.strptime(start_date, '%Y-%m-%d')
+    if start_date_str:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
     else:
         start_date = datetime.now() - timedelta(days=30)
 
-    if end_date:
-        end_date = datetime.strptime(end_date, '%Y-%m-%d')
+    if end_date_str:
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
     else:
         end_date = datetime.now()
 
     # 1. Пациенты по месяцам
-    patients_by_month = Patient.objects.filter(
-        created_at__range=[start_date, end_date]
-    ).extra(select={'month': "strftime('%%Y-%%m', created_at)"}).values('month').annotate(count=Count('id'))
+    patients_by_month = (
+        Patient.objects.filter(
+            appointments__date_time__range=[start_date, end_date]
+        )
+        .annotate(month=TruncMonth('appointments__date_time'))
+        .values('month')
+        .annotate(count=Count('id', distinct=True))
+        .order_by('month')
+    )
 
-    # 2. Записи по врачам (все врачи, даже с 0 записей)
-    doctors_with_appointments = Appointment.objects.filter(
-        date_time__range=[start_date, end_date]
-    ).values('doctor__id').annotate(count=Count('id'))
-
-    # Словарь: { doctor_id: count }
-    doctor_counts = {item['doctor__id']: item['count'] for item in doctors_with_appointments}
-
-    # Получаем всех врачей
-    all_doctors = Doctor.objects.all()
-    appointments_by_doctor = []
-    for doctor in all_doctors:
-        count = doctor_counts.get(doctor.id, 0)  # Если нет записей, то 0
-        if count > 0 or True:  # Показывать всех врачей (или только с записями)
-            appointments_by_doctor.append({
-                'doctor__user__last_name': doctor.user.last_name,
-                'doctor__user__first_name': doctor.user.first_name,
-                'count': count
-            })
+    # 2. Записи по врачам
+    appointments_by_doctor = (
+        Appointment.objects.filter(
+            date_time__range=[start_date, end_date]
+        )
+        .values('doctor__user__last_name', 'doctor__user__first_name')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
 
     # 3. Прибыль по услугам
-    invoices = Invoice.objects.filter(
-        created_at__range=[start_date, end_date]
-    ).values('appointment__invoice__items__service__name').annotate(total=Sum('final_amount'))
+    revenue_by_service = (
+        InvoiceService.objects.filter(
+            invoice__appointment__date_time__range=[start_date, end_date]
+        )
+        .values('service__name')
+        .annotate(total=Sum(F('price_at_time') * F('quantity')))
+        .order_by('-total')
+    )
 
     data = {
-        'patients_by_month': list(patients_by_month),
-        'appointments_by_doctor': appointments_by_doctor,
-        'revenue_by_service': list(invoices)
+        'patients_by_month': [
+            {'month': str(item['month'].date()), 'count': item['count']} for item in patients_by_month
+        ],
+        'appointments_by_doctor': list(appointments_by_doctor),
+        'revenue_by_service': [
+            {
+                'appointment__invoice__items__service__name': item['service__name'],
+                'total': float(item['total']) if item['total'] else 0
+            } for item in revenue_by_service
+        ]
     }
 
     return JsonResponse(data)
-
 
 # Добавление пациента
 @csrf_exempt
